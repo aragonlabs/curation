@@ -55,8 +55,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
       // create application
       const r = await curation.newApplication(data, appLockId, { from: applicant })
-      const applicationId = getEvent(r, "NewApplication", "applicationId")
-      const application = await curation.getApplication(applicationId)
+      const entryId = getEvent(r, "NewApplication", "entryId")
+      const application = await curation.getApplication(entryId)
       assert.equal(application[0], applicant, "Applicant should match")
       //assert.equal(application[1], , "Date should match")
       assert.equal(application[2], false, "Registered bool should match")
@@ -112,22 +112,23 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       // mock lock
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
       const r1 = await curation.newApplication(data, appLockId, { from: applicant })
-      const applicationId = getEvent(r1, "NewApplication", "applicationId")
+      const entryId = getEvent(r1, "NewApplication", "entryId")
       // mock lock
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, (await curation.getTimestampExt()).add(applyStageLen + 1000), curation.address, "")
       // mock vote Id
       await voting.setVoteId(voteId)
       // challenge
-      const r2 = await curation.challengeApplication(applicationId, challengeLockId, { from: challenger })
-      const challengeId = getEvent(r2, "NewChallenge", "challengeId")
+      const r2 = await curation.challengeApplication(entryId, challengeLockId, { from: challenger })
+      const challengeId = getEvent(r2, "NewChallenge", "entryId")
+      assert.equal(challengeId, entryId, "A NewChallenge event for the same entryId should have been generated")
 
-      return challengeId
+      return entryId
     }
 
     it('challenges application', async () => {
-      const challengeId = await applyAndChallenge()
+      const entryId = await applyAndChallenge()
       // checks
-      const challenge = await curation.getChallenge(challengeId)
+      const challenge = await curation.getChallenge(entryId)
       assert.equal(challenge[0], challenger, "Challenger should match")
       //assert.equal(challenge[1], , "Date should match")
       assert.equal(challenge[2], false, "Resolved bool should match")
@@ -141,7 +142,7 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       // mock lock
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
       const r1 = await curation.newApplication(data, appLockId, { from: applicant })
-      const applicationId = getEvent(r1, "NewApplication", "applicationId")
+      const entryId = getEvent(r1, "NewApplication", "entryId")
 
       // increase minDeposit
       await curation.setMinDeposit(minDeposit + 1)
@@ -149,8 +150,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       // mock lock
       await staking.setLock(minDeposit + 1, TIME_UNIT_SECONDS, (await curation.getTimestampExt()).add(applyStageLen + 1000), curation.address, "")
       // challenge
-      const r2 = await curation.challengeApplication(applicationId, challengeLockId, { from: challenger })
-      const challenge = await curation.getChallenge(applicationId)
+      const r2 = await curation.challengeApplication(entryId, challengeLockId, { from: challenger })
+      const challenge = await curation.getChallenge(entryId)
       // no challenge has been created
       assert.equal(challenge[0], zeroAddress, "Challenger should be zero")
       assert.equal(challenge[1], 0, "Date should be zero")
@@ -165,23 +166,23 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       // mock lock
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
       const r1 = await curation.newApplication(data, appLockId, { from: applicant })
-      const applicationId = getEvent(r1, "NewApplication", "applicationId")
+      const entryId = getEvent(r1, "NewApplication", "entryId")
       // mock lock
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
       // mock vote Id
       await voting.setVoteId(voteId)
       return assertRevert(async () => {
         // challenge
-        const r2 = await curation.challengeApplication(applicationId, appLockId)
+        const r2 = await curation.challengeApplication(entryId, appLockId)
       })
     })
 
     it('fails challenging an already challenged application', async () => {
-      const applicationId = await applyAndChallenge()
+      const entryId = await applyAndChallenge()
       const newChallengeLockId = 3
       // repeat
       return assertRevert(async () => {
-        await curation.challengeApplication(applicationId, newChallengeLockId, { from: challenger })
+        await curation.challengeApplication(entryId, newChallengeLockId, { from: challenger })
       })
     })
 
@@ -213,26 +214,26 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     }
 
     const applyChallengeAndResolve = async (result) => {
-      const applicationId = await applyAndChallenge()
+      const entryId = await applyAndChallenge()
       // mock vote result
       await voting.setVoteClosed(voteId, true)
       await voting.setVoteResult(voteId, result, WINNING_STAKE, TOTAL_STAKE)
       // resolve
-      const receipt = await curation.resolveChallenge(applicationId)
+      const receipt = await curation.resolveChallenge(entryId)
 
-      return { applicationId: applicationId, receipt: receipt }
+      return { entryId: entryId, receipt: receipt }
     }
 
     it('resolves challenge, rejected', async () => {
-      const {applicationId, receipt} = await applyChallengeAndResolve(false)
+      const {entryId, receipt} = await applyChallengeAndResolve(false)
       // checks
       // registry
-      assert.isTrue(await registry.exists(applicationId), "Data should have been registered")
+      assert.isTrue(await registry.exists(entryId), "Data should have been registered")
       // application
-      const application = await curation.getApplication(applicationId)
+      const application = await curation.getApplication(entryId)
       assert.isTrue(application[2], "Registered should be true")
       // challenge
-      const challenge = await curation.getChallenge(applicationId)
+      const challenge = await curation.getChallenge(entryId)
       assert.isTrue(challenge[2], "Resolved should be true")
       // redistribution
       const amount = new web3.BigNumber(minDeposit).mul(dispensationPct).dividedToIntegerBy(1e18)
@@ -246,16 +247,16 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     })
 
     it('resolves challenge, accepted', async () => {
-      const {applicationId, receipt} = await applyChallengeAndResolve(true)
+      const {entryId, receipt} = await applyChallengeAndResolve(true)
 
       // checks
       // registry
       assert.isFalse(await registry.exists(data), "Data should not have been registered")
       // application
-      const application = await curation.getApplication(applicationId)
+      const application = await curation.getApplication(entryId)
       assert.isFalse(application[2], "Registered should be false")
       // challenge
-      const challenge = await curation.getChallenge(applicationId)
+      const challenge = await curation.getChallenge(entryId)
       assert.isTrue(challenge[2], "Resolved should be true")
       // redistribution
       const amount = new web3.BigNumber(minDeposit).mul(dispensationPct).dividedToIntegerBy(1e18)
@@ -276,47 +277,47 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       // mock lock
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
       const r1 = await curation.newApplication(data, appLockId, { from: applicant })
-      const applicationId = getEvent(r1, "NewApplication", "applicationId")
+      const entryId = getEvent(r1, "NewApplication", "entryId")
       // mock lock
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, (await curation.getTimestampExt()).add(applyStageLen + 1000), curation.address, "")
       // mock vote Id
       await voting.setVoteId(voteId)
       // challenge
-      await curation.challengeApplication(applicationId, challengeLockId, { from: challenger })
+      await curation.challengeApplication(entryId, challengeLockId, { from: challenger })
       // mock vote result
       await voting.setVoteClosed(voteId, false)
       // resolve
       return assertRevert(async () => {
-        await curation.resolveChallenge(applicationId)
+        await curation.resolveChallenge(entryId)
       })
     })
 
     // ----------- Claim rewards --------------
 
     it('claims reward as voter in the winning party', async () => {
-      const {applicationId} = await applyChallengeAndResolve(true)
+      const {entryId} = await applyChallengeAndResolve(true)
       await voting.setVoterWinningStake(voter, VOTER_WINNING_STAKE)
-      const receipt = await curation.claimReward(applicationId, { from: voter })
+      const receipt = await curation.claimReward(entryId, { from: voter })
       const reward = new web3.BigNumber(minDeposit).mul(VOTER_WINNING_STAKE).mul(1e18 - dispensationPct).dividedToIntegerBy(WINNING_STAKE).dividedToIntegerBy(1e18)
       assert.isTrue(checkMovedTokens(receipt, applicant, voter, reward), "Reward should be payed")
     })
 
     it('fails claiming reward if not voter in the winning party', async () => {
-      const {applicationId} = await applyChallengeAndResolve(true)
+      const {entryId} = await applyChallengeAndResolve(true)
       await voting.setVoterWinningStake(voter, 0)
       return assertRevert(async () => {
-        await curation.claimReward(applicationId, { from: voter })
+        await curation.claimReward(entryId, { from: voter })
       })
 
     })
 
     it('claims reward and lock can be released, challenge rejected', async () => {
-      const {applicationId} = await applyChallengeAndResolve(false)
+      const {entryId} = await applyChallengeAndResolve(false)
       await voting.setVoterWinningStake(voter, VOTER_WINNING_STAKE)
       // mock Staking to pretend losing party tokens were already distributed
       await staking.setLock(0, TIME_UNIT_SECONDS, (await curation.getTimestampExt()).add(applyStageLen + 1000), curation.address, "")
       // claim reward
-      const receipt = await curation.claimReward(applicationId, { from: voter })
+      const receipt = await curation.claimReward(entryId, { from: voter })
       const reward = new web3.BigNumber(minDeposit).mul(VOTER_WINNING_STAKE).mul(1e18 - dispensationPct).dividedToIntegerBy(WINNING_STAKE).dividedToIntegerBy(1e18)
       assert.isTrue(checkMovedTokens(receipt, challenger, voter, reward), "Reward should be payed")
       const appUsedLock = await curation.getUsedLock(appLockId)
@@ -326,15 +327,15 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     })
 
     it('claims reward and lock can be released, challenge accepted', async () => {
-      const {applicationId} = await applyChallengeAndResolve(true)
+      const {entryId} = await applyChallengeAndResolve(true)
       await voting.setVoterWinningStake(voter, VOTER_WINNING_STAKE)
       // mock Staking to pretend losing party tokens were already distributed
       await staking.setLock(0, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
       // claim reward
-      const receipt = await curation.claimReward(applicationId, { from: voter })
+      const receipt = await curation.claimReward(entryId, { from: voter })
       const reward = new web3.BigNumber(minDeposit).mul(VOTER_WINNING_STAKE).mul(1e18 - dispensationPct).dividedToIntegerBy(WINNING_STAKE).dividedToIntegerBy(1e18)
       assert.isTrue(checkMovedTokens(receipt, applicant, voter, reward), "Reward should be payed")
-      const application = await curation.getApplication(applicationId)
+      const application = await curation.getApplication(entryId)
       assert.equal(application[0], zeroAddress, "Application should be empty")
       const appUsedLock = await curation.getUsedLock(appLockId)
       const challengeUsedLock = await curation.getUsedLock(challengeLockId)
@@ -343,18 +344,18 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     })
 
     it('fails claiming reward if challenge is not resolved', async () => {
-      const applicationId = await applyAndChallenge()
+      const entryId = await applyAndChallenge()
       return assertRevert(async () => {
-        await curation.claimReward(applicationId, { from: challenger })
+        await curation.claimReward(entryId, { from: challenger })
       })
     })
 
     it('fails claiming a reward twice', async () => {
-      const {applicationId} = await applyChallengeAndResolve(true)
+      const {entryId} = await applyChallengeAndResolve(true)
       await voting.setVoterWinningStake(voter, VOTER_WINNING_STAKE)
-      await curation.claimReward(applicationId, { from: voter })
+      await curation.claimReward(entryId, { from: voter })
       return assertRevert(async () => {
-        await curation.claimReward(applicationId, { from: voter })
+        await curation.claimReward(entryId, { from: voter })
       })
     })
 
@@ -367,19 +368,19 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
       // create application
       const r = await curation.newApplication(data, appLockId, { from: applicant })
-      const applicationId = getEvent(r, "NewApplication", "applicationId")
+      const entryId = getEvent(r, "NewApplication", "entryId")
 
       // time travel
       await curation.addTime(applyStageLen + 1)
 
       // register
-      await curation.registerApplication(applicationId)
+      await curation.registerApplication(entryId)
 
       // checks
       // registry
-      assert.isTrue(await registry.exists(applicationId), "Data should have been registered")
+      assert.isTrue(await registry.exists(entryId), "Data should have been registered")
       // application
-      const application = await curation.getApplication(applicationId)
+      const application = await curation.getApplication(entryId)
       assert.isTrue(application[2], "Registered should be true")
     })
 
@@ -390,15 +391,15 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
       // create application
       const r = await curation.newApplication(data, appLockId, { from: applicant })
-      const applicationId = getEvent(r, "NewApplication", "applicationId")
+      const entryId = getEvent(r, "NewApplication", "entryId")
 
       // make sure time has not gone by
-      const application = await curation.getApplication(applicationId)
+      const application = await curation.getApplication(entryId)
       await curation.setTimestamp(application[1])
 
       // register
       return assertRevert(async () => {
-        await curation.registerApplication(applicationId)
+        await curation.registerApplication(entryId)
       })
     })
 
@@ -411,21 +412,21 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
       // create application
       const r = await curation.newApplication(data, appLockId, { from: applicant })
-      const applicationId = getEvent(r, "NewApplication", "applicationId")
+      const entryId = getEvent(r, "NewApplication", "entryId")
 
       // mock lock
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, (await curation.getTimestampExt()).add(applyStageLen + 1000), curation.address, "")
       // mock vote Id
       await voting.setVoteId(voteId)
       // challenge
-      const r2 = await curation.challengeApplication(applicationId, challengeLockId, { from: challenger })
+      const r2 = await curation.challengeApplication(entryId, challengeLockId, { from: challenger })
 
       // time travel
       await curation.addTime(applyStageLen + 1)
 
       // register
       return assertRevert(async () => {
-        await curation.registerApplication(applicationId)
+        await curation.registerApplication(entryId)
       })
     })
 
@@ -488,31 +489,31 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     })
 
     it('fails challenging', async () => {
-      const applicationId = 1
+      const entryId = 1
       const lockId = 1
       return assertRevert(async () => {
-        await curation.challengeApplication(applicationId, lockId)
+        await curation.challengeApplication(entryId, lockId)
       })
     })
 
     it('fails resolving a challenge', async () => {
       return assertRevert(async () => {
-        const challengeId = 1
-        await curation.resolveChallenge(challengeId)
+        const entryId = 1
+        await curation.resolveChallenge(entryId)
       })
     })
 
     it('fails registering an application', async () => {
       return assertRevert(async () => {
-        const applicationId = 1
-        await curation.registerApplication(applicationId)
+        const entryId = 1
+        await curation.registerApplication(entryId)
       })
     })
 
     it('fails claiming reward', async () => {
       return assertRevert(async () => {
-        const challengeId = 1
-        await curation.claimReward(challengeId)
+        const entryId = 1
+        await curation.claimReward(entryId)
       })
     })
 

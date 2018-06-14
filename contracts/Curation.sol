@@ -58,9 +58,9 @@ contract Curation is AragonApp {
     mapping(bytes32 => Challenge) challenges;
     mapping(uint256 => bool) usedLocks;
 
-    event NewApplication(bytes32 applicationId, address applicant);
-    event NewChallenge(bytes32 applicationId, bytes32 challengeId, address challenger);
-    event ResolvedChallenge(bytes32 applicationId, bytes32 challengeId, bool result);
+    event NewApplication(bytes32 entryId, address applicant);
+    event NewChallenge(bytes32 entryId, address challenger);
+    event ResolvedChallenge(bytes32 entryId, bool result);
 
     /**
      * @notice Initializes Curation app with
@@ -91,19 +91,19 @@ contract Curation is AragonApp {
         _setDispensationPct(_dispensationPct);
     }
 
-    function newApplication(bytes data, uint256 lockId) isInitialized public returns (bytes32 applicationId) {
-        applicationId = keccak256(data);
+    function newApplication(bytes data, uint256 lockId) isInitialized public returns (bytes32 entryId) {
+        entryId = keccak256(data);
 
         require(data.length != 0);
         // check data doesn't have an ongoing application
-        require(!applicationExists(applicationId));
+        require(!applicationExists(entryId));
         // check data doesn't exist in Registry
-        require(!registry.exists(applicationId));
+        require(!registry.exists(entryId));
 
         // check locked tokens
         uint256 amount = _checkLock(lockId, MAX_UINT64);
 
-        applications[applicationId] = Application({
+        applications[entryId] = Application({
             applicant: msg.sender,
             date: uint64(getTimestamp()),
             registered: false,
@@ -113,19 +113,19 @@ contract Curation is AragonApp {
         });
 
         // register used lock
-        NewApplication(applicationId, msg.sender);
+        NewApplication(entryId, msg.sender);
     }
 
-    function challengeApplication(bytes32 applicationId, uint256 lockId) isInitialized public returns(bytes32) {
+    function challengeApplication(bytes32 entryId, uint256 lockId) isInitialized public returns(bytes32) {
         // check application doesn't have an ongoing challenge
-        require(!challengeExists(applicationId));
+        require(!challengeExists(entryId));
         // check locked tokens
         uint256 amount = _checkLock(lockId, uint64(getTimestamp()).add(applyStageLen));
 
         // touch-and-remove case
-        Application memory application = applications[applicationId];
+        Application memory application = applications[entryId];
         if (application.amount < minDeposit) {
-            registry.remove(applicationId);
+            registry.remove(entryId);
             staking.unlock(application.applicant, application.lockId);
             staking.unlock(msg.sender, lockId);
             return 0;
@@ -136,7 +136,7 @@ contract Curation is AragonApp {
         // TODO: metadata
         uint256 voteId = voting.newVote("", "");
 
-        challenges[applicationId] = Challenge({
+        challenges[entryId] = Challenge({
             challenger: msg.sender,
             date: uint64(getTimestamp()),
             resolved: false,
@@ -147,14 +147,14 @@ contract Curation is AragonApp {
         });
 
         // TODO: ids?
-        NewChallenge(applicationId, applicationId, msg.sender);
+        NewChallenge(entryId, msg.sender);
 
-        return applicationId;
+        return entryId;
     }
 
-    function resolveChallenge(bytes32 challengeId) isInitialized public {
-        Challenge storage challenge = challenges[challengeId];
-        Application storage application = applications[challengeId];
+    function resolveChallenge(bytes32 entryId) isInitialized public {
+        Challenge storage challenge = challenges[entryId];
+        Application storage application = applications[entryId];
 
         require(!challenge.resolved);
         // TODO: canExecute??
@@ -182,7 +182,7 @@ contract Curation is AragonApp {
             // it has been already registered
             if (application.registered) {
                 // remove from Registry app
-                registry.remove(challengeId);
+                registry.remove(entryId);
             }
             // Remove challenger used lock
             delete(usedLocks[challenge.lockId]);
@@ -194,13 +194,14 @@ contract Curation is AragonApp {
         }
 
         challenge.resolved = true;
+        ResolvedChallenge(entryId, voteResult);
     }
 
-    function claimReward(bytes32 challengeId) isInitialized public {
-        require(isChallengeResolved(challengeId));
+    function claimReward(bytes32 entryId) isInitialized public {
+        require(isChallengeResolved(entryId));
 
-        Challenge storage challenge = challenges[challengeId];
-        Application memory application = applications[challengeId];
+        Challenge storage challenge = challenges[entryId];
+        Application memory application = applications[entryId];
 
         // avoid claiming twice
         require(!challenge.claims[msg.sender]);
@@ -235,7 +236,7 @@ contract Curation is AragonApp {
             delete(usedLocks[loserLockId]);
             // Remove application, if it lost, as redistribution is done
             if (voteResult == true) {
-                delete(applications[challengeId]);
+                delete(applications[entryId]);
             }
         }
 
@@ -243,10 +244,10 @@ contract Curation is AragonApp {
         challenge.claims[msg.sender] = true;
     }
 
-    function registerApplication(bytes32 applicationId) isInitialized public {
-        require(canBeRegistered(applicationId));
+    function registerApplication(bytes32 entryId) isInitialized public {
+        require(canBeRegistered(entryId));
 
-        Application storage application = applications[applicationId];
+        Application storage application = applications[entryId];
         require(!application.registered);
 
         // insert in Registry app
@@ -272,22 +273,22 @@ contract Curation is AragonApp {
         _setDispensationPct(_dispensationPct);
     }
 
-    function canBeRegistered(bytes32 applicationId) view public returns (bool) {
+    function canBeRegistered(bytes32 entryId) view public returns (bool) {
         // no challenges
-        if (uint64(getTimestamp()) > applications[applicationId].date.add(applyStageLen)
-            && challenges[applicationId].challenger == address(0) ) {
+        if (uint64(getTimestamp()) > applications[entryId].date.add(applyStageLen)
+            && challenges[entryId].challenger == address(0) ) {
             return true;
         }
 
         return false;
     }
 
-    function isChallengeResolved(bytes32 challengeId) view public returns (bool) {
-        return challenges[challengeId].resolved;
+    function isChallengeResolved(bytes32 entryId) view public returns (bool) {
+        return challenges[entryId].resolved;
     }
 
     function getApplication(
-        bytes32 applicationId
+        bytes32 entryId
     )
         view
         external
@@ -300,7 +301,7 @@ contract Curation is AragonApp {
             uint256 lockId
         )
     {
-        Application memory application = applications[applicationId];
+        Application memory application = applications[entryId];
         return (
             application.applicant,
             application.date,
@@ -312,7 +313,7 @@ contract Curation is AragonApp {
     }
 
     function getChallenge(
-        bytes32 challengeId
+        bytes32 entryId
     )
         view
         external
@@ -326,7 +327,7 @@ contract Curation is AragonApp {
             uint256 dipsensationPct
         )
     {
-        Challenge memory challenge = challenges[challengeId];
+        Challenge memory challenge = challenges[entryId];
         return (
             challenge.challenger,
             challenge.date,
@@ -379,12 +380,12 @@ contract Curation is AragonApp {
         dispensationPct = _dispensationPct;
     }
 
-    function applicationExists(bytes32 applicationId) view internal returns (bool) {
-        return applications[applicationId].data.length > 0;
+    function applicationExists(bytes32 entryId) view internal returns (bool) {
+        return applications[entryId].data.length > 0;
     }
 
-    function challengeExists(bytes32 challengeId) view internal returns (bool) {
-        return challenges[challengeId].challenger != address(0);
+    function challengeExists(bytes32 entryId) view internal returns (bool) {
+        return challenges[entryId].challenger != address(0);
     }
 
     function getTimestamp() view internal returns (uint256) {
