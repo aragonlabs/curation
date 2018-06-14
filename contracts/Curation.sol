@@ -177,12 +177,12 @@ contract Curation is AragonApp {
             staking.unlock(challenge.challenger, challenge.lockId);
             // Redistribute tokens
             staking.moveTokens(challenge.challenger, application.applicant, challenge.amount.mul(dispensationPct) / PCT_BASE);
-            // TODO: unlock?!!
         } else { // challenge accepted (application rejected)
             // it has been already registered
             if (application.registered) {
                 // remove from Registry app
                 registry.remove(entryId);
+                application.registered = false;
             }
             // Remove challenger used lock
             delete(usedLocks[challenge.lockId]);
@@ -212,10 +212,10 @@ contract Curation is AragonApp {
 
         address loser;
         uint256 loserLockId;
-        if (voteResult == false) { // applicant and won
+        if (voteResult == false) {
             loser = challenge.challenger;
             loserLockId = challenge.lockId;
-        } else if (voteResult == true) { // challenger and won
+        } else { // voteResult == true
             loser = application.applicant;
             loserLockId = application.lockId;
         }
