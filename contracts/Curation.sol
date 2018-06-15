@@ -264,7 +264,10 @@ contract Curation is AragonApp {
         _setApplyStageLen(_applyStageLen);
     }
 
-    function setDispensationPct(uint256 _dispensationPct) authP(CHANGE_PARAMS_ROLE, arr(uint256(DISPENSATION_PCT_PARAM), _dispensationPct)) public {
+    function setDispensationPct(uint256 _dispensationPct)
+        authP(CHANGE_PARAMS_ROLE, arr(uint256(DISPENSATION_PCT_PARAM), _dispensationPct))
+        public
+    {
         require(_dispensationPct <= PCT_BASE);
 
         _setDispensationPct(_dispensationPct);
@@ -272,8 +275,9 @@ contract Curation is AragonApp {
 
     function canBeRegistered(bytes32 entryId) view public returns (bool) {
         // no challenges
-        if (uint64(getTimestamp()) > applications[entryId].date.add(applyStageLen)
-            && challenges[entryId].challenger == address(0) ) {
+        if (uint64(getTimestamp()) > applications[entryId].date.add(applyStageLen) &&
+            challenges[entryId].challenger == address(0))
+        {
             return true;
         }
 
@@ -288,7 +292,7 @@ contract Curation is AragonApp {
         bytes32 entryId
     )
         view
-        external
+        public
         returns (
             address applicant,
             uint64 date,
@@ -313,7 +317,7 @@ contract Curation is AragonApp {
         bytes32 entryId
     )
         view
-        external
+        public
         returns (
             address challenger,
             uint64 date,

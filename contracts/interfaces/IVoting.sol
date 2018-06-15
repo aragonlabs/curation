@@ -13,4 +13,7 @@ interface IVoting {
 
 contract FakeVoting {
     // to work around coverage issue
+    function fake() public {
+        // for lint
+    }
 }
