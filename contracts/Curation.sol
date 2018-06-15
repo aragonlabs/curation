@@ -146,7 +146,6 @@ contract Curation is AragonApp {
             dispensationPct: dispensationPct
         });
 
-        // TODO: ids?
         NewChallenge(entryId, msg.sender);
 
         return entryId;
@@ -163,6 +162,7 @@ contract Curation is AragonApp {
         bool voteResult;
         (voteResult,,) = voting.getVoteResult(challenge.voteId);
 
+        uint256 reward;
         if (voteResult == false) { // challenge not accepted (application remains)
             // it's still in application phase (not registered yet)
             if (!application.registered) {
@@ -173,10 +173,9 @@ contract Curation is AragonApp {
             // Remove applicant used lock
             delete(usedLocks[application.lockId]);
             // Unlock challenger tokens from Staking app
-            // TODO: unlock partially only!
-            staking.unlock(challenge.challenger, challenge.lockId);
+            reward = challenge.amount.mul(dispensationPct) / PCT_BASE;
             // Redistribute tokens
-            staking.moveTokens(challenge.challenger, application.applicant, challenge.amount.mul(dispensationPct) / PCT_BASE);
+            staking.unlockAndMoveTokens(challenge.lockId, challenge.challenger, application.applicant, reward);
         } else { // challenge accepted (application rejected)
             // it has been already registered
             if (application.registered) {
@@ -187,10 +186,9 @@ contract Curation is AragonApp {
             // Remove challenger used lock
             delete(usedLocks[challenge.lockId]);
             // Unlock applicant tokens from Staking app
-            // TODO: unlock partially only!
-            staking.unlock(application.applicant, application.lockId);
+            reward = application.amount.mul(dispensationPct) / PCT_BASE;
             // Redistribute tokens
-            staking.moveTokens(application.applicant, challenge.challenger, application.amount.mul(dispensationPct) / PCT_BASE);
+            staking.unlockAndMoveTokens(application.lockId, application.applicant, challenge.challenger, reward);
         }
 
         challenge.resolved = true;
@@ -225,9 +223,8 @@ contract Curation is AragonApp {
         require(voterWinningStake > 0);
         // amount * (voter / total) * (1 - dispensationPct)
         uint256 reward = challenge.amount.mul(voterWinningStake).mul(PCT_BASE.sub(dispensationPct)) / (totalWinningStake * PCT_BASE);
-        // TODO: partial unlock
         // Redistribute tokens
-        staking.moveTokens(loser, msg.sender, reward);
+        staking.unlockAndMoveTokens(loserLockId, loser, msg.sender, reward);
 
         // check if lock can be released
         uint256 amount;

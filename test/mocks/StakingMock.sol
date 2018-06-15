@@ -23,11 +23,11 @@ contract StakingMock is IStaking {
         // do nothing
     }
 
-    function moveTokens(address from, address to, uint256 amount) external {
-        MovedTokens(from, to, amount);
+    function unlockAndMoveTokens(uint256 _lockId, address _from, address _to, uint256 _amount) external {
+        MovedTokens(_from, _to, _amount);
     }
 
-    function getLock(address acct, uint256 lockId) public view returns (uint256, uint8, uint64, address, bytes32) {
+    function getLock(address _acct, uint256 _lockId) public view returns (uint256, uint8, uint64, address, bytes32) {
         return (amount, lockUnit, lockEnds, unlocker, metadata);
     }
 
