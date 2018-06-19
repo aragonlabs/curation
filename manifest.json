@@ -1,0 +1,8 @@
+{
+  "name": "Curation",
+  "description": "Curation component of the TCR stack",
+  "icons": [{
+    "src": "images/icon.png",
+    "sizes": "192x192"
+  }]
+}
