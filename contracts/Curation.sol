@@ -172,6 +172,8 @@ contract Curation is AragonApp {
         Application storage application = applications[entryId];
 
         require(!challenge.resolved);
+        // to avoid resolving and redistributing twice
+        challenge.resolved = true;
         // TODO: canExecute??
         require(voting.isClosed(challenge.voteId));
 
@@ -207,7 +209,6 @@ contract Curation is AragonApp {
             staking.unlockAndMoveTokens(application.lockId, application.applicant, challenge.challenger, reward);
         }
 
-        challenge.resolved = true;
         ResolvedChallenge(entryId, voteResult);
     }
 
@@ -219,6 +220,9 @@ contract Curation is AragonApp {
 
         // avoid claiming twice
         require(!challenge.claims[msg.sender]);
+
+        // register claim to avoid claiming it again
+        challenge.claims[msg.sender] = true;
 
         bool voteResult;
         uint256 totalWinningStake;
@@ -252,9 +256,6 @@ contract Curation is AragonApp {
                 delete(applications[entryId]);
             }
         }
-
-        // register claim to avoid claiming it again
-        challenge.claims[msg.sender] = true;
     }
 
     function registerApplication(bytes32 entryId) isInitialized public {
