@@ -1,7 +1,6 @@
 pragma solidity 0.4.18;
 
 import "@aragon/os/contracts/apps/AragonApp.sol";
-import "@aragon/os/contracts/common/IsContract.sol";
 import "@aragon/os/contracts/lib/misc/Migrations.sol";
 import "@aragon/os/contracts/lib/zeppelin/math/SafeMath.sol";
 import "@aragon/os/contracts/lib/zeppelin/math/SafeMath64.sol";
@@ -132,9 +131,26 @@ contract Curation is AragonApp {
         }
 
         // create vote
-        // TODO: script
         // TODO: metadata
-        uint256 voteId = voting.newVote("", "");
+        // script to call `resolveChallenge(entryId)`
+        uint256 scriptLength = 64; // 4 (spec) + 20 (address) + 4 (calldataLength) + 4 (signature) + 32 (input)
+        bytes4 spec = bytes4(0x01);
+        address target = address(this);
+        bytes memory targetBytes = new bytes(32);
+        bytes4 calldataLength = bytes4(0x24); // 4 + 32
+        bytes4 signature = this.resolveChallenge.selector;
+        bytes memory executionScript = new bytes(scriptLength);
+        // concatenate spec + address(this) + calldataLength + calldata
+        // TODO: should we put this somewhere in aragonOS to be able ti reuse? (if it's not already there)
+        assembly {
+            mstore(add(executionScript, 0x20), spec)
+            mstore(add(targetBytes, 0x20), target)
+            mstore(add(executionScript, 0x24), mload(add(targetBytes, 0x2C)))
+            mstore(add(executionScript, 0x38), calldataLength)
+            mstore(add(executionScript, 0x3C), signature)
+            mstore(add(executionScript, 0x40), entryId)
+        }
+        uint256 voteId = voting.newVote(executionScript, "");
 
         challenges[entryId] = Challenge({
             challenger: msg.sender,
