@@ -104,7 +104,7 @@ contract Curation is AragonApp {
 
         applications[entryId] = Application({
             applicant: msg.sender,
-            date: uint64(getTimestamp()),
+            date: getTimestamp(),
             registered: false,
             data: data,
             amount: amount,
@@ -119,7 +119,7 @@ contract Curation is AragonApp {
         // check application doesn't have an ongoing challenge
         require(!challengeExists(entryId));
         // check locked tokens
-        uint256 amount = _checkLock(lockId, uint64(getTimestamp()).add(applyStageLen));
+        uint256 amount = _checkLock(lockId, getTimestamp().add(applyStageLen));
 
         // touch-and-remove case
         Application memory application = applications[entryId];
@@ -154,7 +154,7 @@ contract Curation is AragonApp {
 
         challenges[entryId] = Challenge({
             challenger: msg.sender,
-            date: uint64(getTimestamp()),
+            date: getTimestamp(),
             resolved: false,
             amount: amount,
             lockId: lockId,
@@ -292,7 +292,7 @@ contract Curation is AragonApp {
 
     function canBeRegistered(bytes32 entryId) view public returns (bool) {
         // no challenges
-        if (uint64(getTimestamp()) > applications[entryId].date.add(applyStageLen) &&
+        if (getTimestamp() > applications[entryId].date.add(applyStageLen) &&
             challenges[entryId].challenger == address(0))
         {
             return true;
@@ -406,7 +406,7 @@ contract Curation is AragonApp {
         return challenges[entryId].challenger != address(0);
     }
 
-    function getTimestamp() view internal returns (uint256) {
-        return now;
+    function getTimestamp() view internal returns (uint64) {
+        return uint64(now);
     }
 }

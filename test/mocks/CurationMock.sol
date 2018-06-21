@@ -4,21 +4,21 @@ import "../../contracts/Curation.sol";
 
 
 contract CurationMock is Curation {
-    uint256 _mockTime = now;
+    uint64 _mockTime = uint64(now);
 
-    function getTimestampExt() external view returns (uint256) {
+    function getTimestampExt() external view returns (uint64) {
         return getTimestamp();
     }
 
-    function setTimestamp(uint i) public {
+    function setTimestamp(uint64 i) public {
         _mockTime = i;
     }
 
-    function addTime(uint i) public {
+    function addTime(uint64 i) public {
         _mockTime += i;
     }
 
-    function getTimestamp() internal view returns (uint256) {
+    function getTimestamp() internal view returns (uint64) {
         return _mockTime;
     }
 
