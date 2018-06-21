@@ -1,0 +1,14 @@
+# Dependencies
+node_modules
+
+# coverage
+coverage
+coverageEnv
+coverage.json
+scTopics
+allFiredEvents
+
+artifact.json
+
+# truffle build artifacts
+build

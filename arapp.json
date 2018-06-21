@@ -1,0 +1,9 @@
+{
+    "appName": "curation.aragonpm.eth",
+    "version": "1.0.0",
+    "roles": [
+        { "name": "Change parameters", "id": "CHANGE_PARAMS_ROLE", "params": ["Param id", "Value"] },
+      { "name": "Change Voting app", "id": "CHANGE_VOTING_APP_ROLE", "params": ["Old Voting app", "New Voting app"] }
+    ],
+    "path": "contracts/Curation.sol"
+}

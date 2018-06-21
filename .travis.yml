@@ -1,0 +1,21 @@
+sudo: required
+services:
+  - docker
+language: node_js
+cache:
+  directories:
+    - node_modules
+notifications:
+  email: false
+node_js:
+  - '8'
+env:
+  - TASK=test
+  - TASK=lint
+  - TASK=coverage
+before_script:
+  - npm prune
+script:
+  - npm run $TASK
+after_success:
+  - ./node_modules/.bin/lcov-result-merger 'apps/*/coverage/lcov.info' | ./node_modules/.bin/coveralls
