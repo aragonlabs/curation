@@ -3,7 +3,7 @@ pragma solidity ^0.4.18;
 
 interface IStaking {
     function unlock(address acct, uint256 lockId) public;
-    function unlockAndMoveTokens(uint256 lockId, address from, address to, uint256 amount) external;
+    function unlockAndMoveTokens(address from, uint256 lockId, address to, uint256 amount) external;
     function getLock(
         address acct,
         uint256 lockId

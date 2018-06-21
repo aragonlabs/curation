@@ -23,7 +23,7 @@ contract StakingMock is IStaking {
         // do nothing
     }
 
-    function unlockAndMoveTokens(uint256 _lockId, address _from, address _to, uint256 _amount) external {
+    function unlockAndMoveTokens(address _from, uint256 _lockId, address _to, uint256 _amount) external {
         MovedTokens(_from, _to, _amount);
     }
 
