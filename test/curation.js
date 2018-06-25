@@ -37,9 +37,9 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.equal(await curation.registry(), registry.address, "Registry address should match")
       assert.equal(await curation.staking(), staking.address, "Staking address should match")
       assert.equal(await curation.voting(), voting.address, "Voting address should match")
-      assert.equal(await curation.minDeposit(), minDeposit, "minDeposit address should match")
-      assert.equal(await curation.applyStageLen(), applyStageLen, "applyStageLen address should match")
-      assert.equal((await curation.dispensationPct()).toString(), dispensationPct.toString(), "dispensationPct address should match")
+      assert.equal(await curation.minDeposit(), minDeposit, "minDeposit should match")
+      assert.equal(await curation.applyStageLen(), applyStageLen, "applyStageLen should match")
+      assert.equal((await curation.dispensationPct()).toString(), dispensationPct.toString(), "dispensationPct should match")
     })
 
     it('fails on reinitialization', async () => {
