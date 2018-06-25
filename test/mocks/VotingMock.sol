@@ -48,16 +48,15 @@ contract VotingMock is IVoting, AragonApp {
         runScript(votes[_voteId].script, new bytes(0), new address[](0));
     }
 
-    // TODO: canExecute or isClosed??
     function isClosed(uint256 _voteId) view public returns (bool) {
         return votes[_voteId].closed;
     }
 
-    function getVoteResult(uint256 _voteId) view public returns (bool _result, uint256 _winningStake, uint256 _totalStake) {
+    function getVoteResult(uint256 _voteId) public returns (bool _result, uint256 _winningStake, uint256 _totalStake) {
         return (votes[_voteId].result, votes[_voteId].winningStake, votes[_voteId].totalStake);
     }
 
-    function getVoterWinningStake(uint256 _voteId, address _voter) view public returns (uint256) {
+    function getVoterWinningStake(uint256 _voteId, address _voter) public returns (uint256) {
         if (!isClosed(_voteId)) {
             return 0;
         }
