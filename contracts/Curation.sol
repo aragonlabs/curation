@@ -55,7 +55,7 @@ contract Curation is AragonApp {
 
     mapping(bytes32 => Application) applications;
     mapping(bytes32 => Challenge) challenges;
-    mapping(uint256 => bool) usedLocks;
+    mapping(address => mapping(uint256 => bool)) usedLocks;
 
     event NewApplication(bytes32 entryId, address applicant);
     event NewChallenge(bytes32 entryId, address challenger);
@@ -100,7 +100,7 @@ contract Curation is AragonApp {
         require(!registry.exists(entryId));
 
         // check locked tokens
-        uint256 amount = _checkLock(lockId, MAX_UINT64);
+        uint256 amount = _checkLock(msg.sender, lockId, MAX_UINT64);
 
         applications[entryId] = Application({
             applicant: msg.sender,
@@ -119,7 +119,7 @@ contract Curation is AragonApp {
         // check application doesn't have an ongoing challenge
         require(!challengeExists(entryId));
         // check locked tokens
-        uint256 amount = _checkLock(lockId, getTimestamp().add(applyStageLen));
+        uint256 amount = _checkLock(msg.sender, lockId, getTimestamp().add(applyStageLen));
 
         // touch-and-remove case
         Application memory application = applications[entryId];
@@ -189,7 +189,7 @@ contract Curation is AragonApp {
                 application.registered = true;
             }
             // Remove applicant used lock
-            delete(usedLocks[application.lockId]);
+            delete(usedLocks[application.applicant][application.lockId]);
             // Unlock challenger tokens from Staking app
             reward = challenge.amount.mul(dispensationPct) / PCT_BASE;
             // Redistribute tokens
@@ -202,7 +202,7 @@ contract Curation is AragonApp {
                 application.registered = false;
             }
             // Remove challenger used lock
-            delete(usedLocks[challenge.lockId]);
+            delete(usedLocks[challenge.challenger][challenge.lockId]);
             // Unlock applicant tokens from Staking app
             reward = application.amount.mul(dispensationPct) / PCT_BASE;
             // Redistribute tokens
@@ -250,7 +250,7 @@ contract Curation is AragonApp {
         uint256 amount;
         (amount, ) = staking.getLock(loser, loserLockId);
         if (amount == 0) { // TODO: with truncating, this may never happen!!
-            delete(usedLocks[loserLockId]);
+            delete(usedLocks[loser][loserLockId]);
             // Remove application, if it lost, as redistribution is done
             if (voteResult == true) {
                 delete(applications[entryId]);
@@ -357,9 +357,9 @@ contract Curation is AragonApp {
         );
     }
 
-    function _checkLock(uint256 lockId, uint64 date) internal returns (uint256) {
+    function _checkLock(address user, uint256 lockId, uint64 date) internal returns (uint256) {
         // check lockId was not used before
-        require(!usedLocks[lockId]);
+        require(!usedLocks[user][lockId]);
         // get the lock
         uint256 amount;
         uint8 lockUnit;
@@ -375,7 +375,7 @@ contract Curation is AragonApp {
         require(lockEnds >= date);
 
         // mark it as used
-        usedLocks[lockId] = true;
+        usedLocks[user][lockId] = true;
 
         return amount;
     }

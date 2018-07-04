@@ -127,8 +127,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isFalse(checkMovedTokens(receipt, applicant, challenger, 0))
       assert.isTrue(checkMovedTokens(receipt, challenger, applicant, amount))
       // used locks
-      const appUsedLock = await curation.getUsedLock.call(appLockId)
-      const challengeUsedLock = await curation.getUsedLock.call(challengeLockId)
+      const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
+      const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
       assert.isFalse(appUsedLock)
       assert.isTrue(challengeUsedLock)
     })
@@ -149,8 +149,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isFalse(checkMovedTokens(receipt, challenger, applicant, 0))
       assert.isTrue(checkMovedTokens(receipt, applicant, challenger, amount))
       // used locks
-      const appUsedLock = await curation.getUsedLock.call(appLockId)
-      const challengeUsedLock = await curation.getUsedLock.call(challengeLockId)
+      const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
+      const challengeUsedLock = await curation.getUsedLock.call(challenger,challengeLockId)
       assert.isTrue(appUsedLock)
       assert.isFalse(challengeUsedLock)
     })

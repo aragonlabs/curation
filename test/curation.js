@@ -213,11 +213,13 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       const entryId = await createApplication()
       // mock lock
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
+      // use challenger's lock for an application
+      await curation.newApplication("test 2", appLockId, { from: challenger })
       // mock vote Id
       await voting.setVoteId(voteId)
       return assertRevert(async () => {
-        // challenge
-        await curation.challengeApplication(entryId, appLockId)
+        // challenge, using the same lock as for the application
+        await curation.challengeApplication(entryId, appLockId, { from: challenger })
       })
     })
 
@@ -332,8 +334,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isFalse(checkMovedTokens(receipt, applicant, challenger, 0))
       assert.isTrue(checkMovedTokens(receipt, challenger, applicant, amount))
       // used locks
-      const appUsedLock = await curation.getUsedLock.call(appLockId)
-      const challengeUsedLock = await curation.getUsedLock.call(challengeLockId)
+      const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
+      const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
       assert.isFalse(appUsedLock)
       assert.isTrue(challengeUsedLock)
     })
@@ -355,8 +357,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isFalse(checkMovedTokens(receipt, challenger, applicant, 0))
       assert.isTrue(checkMovedTokens(receipt, applicant, challenger, amount))
       // used locks
-      const appUsedLock = await curation.getUsedLock.call(appLockId)
-      const challengeUsedLock = await curation.getUsedLock.call(challengeLockId)
+      const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
+      const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
       assert.isTrue(appUsedLock)
       assert.isFalse(challengeUsedLock)
     })
@@ -403,8 +405,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isFalse(checkMovedTokens(receipt, applicant, challenger, 0))
       assert.isTrue(checkMovedTokens(receipt, challenger, applicant, amount))
       // used locks
-      const appUsedLock = await curation.getUsedLock.call(appLockId)
-      const challengeUsedLock = await curation.getUsedLock.call(challengeLockId)
+      const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
+      const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
       assert.isFalse(appUsedLock)
       assert.isTrue(challengeUsedLock)
     })
@@ -426,8 +428,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isFalse(checkMovedTokens(receipt, challenger, applicant, 0))
       assert.isTrue(checkMovedTokens(receipt, applicant, challenger, amount))
       // used locks
-      const appUsedLock = await curation.getUsedLock.call(appLockId)
-      const challengeUsedLock = await curation.getUsedLock.call(challengeLockId)
+      const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
+      const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
       assert.isTrue(appUsedLock)
       assert.isFalse(challengeUsedLock)
     })
@@ -499,8 +501,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
       // checks
       assert.isTrue(checkMovedTokens(receipt, challenger, voter, reward), "Reward should be payed")
-      const appUsedLock = await curation.getUsedLock.call(appLockId)
-      const challengeUsedLock = await curation.getUsedLock.call(challengeLockId)
+      const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
+      const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
       assert.isFalse(appUsedLock, "app lock should have been freed")
       assert.isFalse(challengeUsedLock, "challenge lock should have been freed")
     })
@@ -512,8 +514,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isTrue(checkMovedTokens(receipt, applicant, voter, reward), "Reward should be payed")
       const application = await curation.getApplication.call(entryId)
       assert.equal(application[0], zeroAddress, "Application should be empty")
-      const appUsedLock = await curation.getUsedLock.call(appLockId)
-      const challengeUsedLock = await curation.getUsedLock.call(challengeLockId)
+      const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
+      const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
       assert.isFalse(appUsedLock)
       assert.isFalse(challengeUsedLock)
     })
