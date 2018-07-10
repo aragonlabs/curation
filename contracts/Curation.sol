@@ -188,7 +188,7 @@ contract Curation is AragonApp {
                 registry.add(application.data);
                 application.registered = true;
             }
-            // Remove applicant used lock
+            // Remove applicant (winner) used lock
             delete(usedLocks[application.applicant][application.lockId]);
             // Unlock challenger tokens from Staking app
             reward = challenge.amount.mul(dispensationPct) / PCT_BASE;
@@ -201,7 +201,7 @@ contract Curation is AragonApp {
                 registry.remove(entryId);
                 application.registered = false;
             }
-            // Remove challenger used lock
+            // Remove challenger (winner) used lock
             delete(usedLocks[challenge.challenger][challenge.lockId]);
             // Unlock applicant tokens from Staking app
             reward = application.amount.mul(dispensationPct) / PCT_BASE;
@@ -230,26 +230,29 @@ contract Curation is AragonApp {
 
         address loser;
         uint256 loserLockId;
+        uint256 amount;
         if (voteResult == false) {
             loser = challenge.challenger;
             loserLockId = challenge.lockId;
+            amount = challenge.amount;
         } else { // voteResult == true
             loser = application.applicant;
             loserLockId = application.lockId;
+            amount = application.amount;
         }
 
         // reward as a voter
         uint256 voterWinningStake = voting.getVoterWinningStake(challenge.voteId, msg.sender);
         require(voterWinningStake > 0);
         // amount * (voter / total) * (1 - dispensationPct)
-        uint256 reward = challenge.amount.mul(voterWinningStake).mul(PCT_BASE.sub(dispensationPct)) / (totalWinningStake * PCT_BASE);
+        uint256 reward = amount.mul(voterWinningStake).mul(PCT_BASE.sub(dispensationPct)) / (totalWinningStake * PCT_BASE);
         // Redistribute tokens
         staking.unlockAndMoveTokens(loser, loserLockId, msg.sender, reward);
 
         // check if lock can be released
-        uint256 amount;
-        (amount, ) = staking.getLock(loser, loserLockId);
-        if (amount == 0) { // TODO: with truncating, this may never happen!!
+        uint256 remainingLockAmount;
+        (remainingLockAmount, ) = staking.getLock(loser, loserLockId);
+        if (remainingLockAmount == 0) { // TODO: with truncating, this may never happen!!
             delete(usedLocks[loser][loserLockId]);
             // Remove application, if it lost, as redistribution is done
             if (voteResult == true) {
