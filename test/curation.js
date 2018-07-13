@@ -1,5 +1,7 @@
 const { assertRevert } = require('@aragon/test-helpers/assertThrow')
 
+const { checkUnlocked, checkMovedTokens } = require('./helpers.js')
+
 const getContract = name => artifacts.require(name)
 const getEvent = (receipt, event, arg) => { return receipt.logs.filter(l => l.event == event)[0].args[arg] }
 const pct16 = x => new web3.BigNumber(x).times(new web3.BigNumber(10).toPower(16))
@@ -17,6 +19,7 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
   const TIME_UNIT_BLOCKS = 0
   const TIME_UNIT_SECONDS = 1
 
+
   context('Regular App', async () => {
     const appLockId = 1
     const challengeLockId = 2
@@ -27,6 +30,7 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       registry = await getContract('RegistryApp').new()
       staking = await getContract('StakingMock').new()
       voting = await getContract('VotingMock').new()
+      await voting.setVoteId(voteId)
 
       curation = await getContract('CurationMock').new()
       MAX_UINT64 = await curation.MAX_UINT64()
@@ -181,11 +185,16 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       const challenge = await curation.getChallenge.call(entryId)
       assert.equal(challenge[0], challenger, "Challenger should match")
       //assert.equal(challenge[1], , "Date should match")
-      assert.equal(challenge[2], false, "Resolved bool should match")
-      assert.equal(challenge[3], minDeposit, "Amount should match")
-      assert.equal(challenge[4], challengeLockId, "LockId should match")
-      assert.equal(challenge[5], voteId, "Vote Id should match")
-      assert.equal(challenge[6].toString(), dispensationPct.toString(), "Dipsensation Pct should match")
+      assert.equal(challenge[2], minDeposit, "Amount should match")
+      assert.equal(challenge[3], challengeLockId, "LockId should match")
+      assert.equal(challenge[4], voteId, "Vote Id should match")
+      assert.equal(challenge[5].toString(), dispensationPct.toString(), "Dispensation Pct should match")
+      // vote
+      const vote = await curation.getVote.call(entryId)
+      assert.equal(vote[0], false, "Closed bool should match")
+      assert.equal(vote[1], false, "Result bool should match")
+      assert.equal(vote[2], 0, "Total winning stake Pct should match")
+      assert.equal(vote[3], 0, "Voters reward pool Pct should match")
     })
 
     it('challenges touch-and-remove application', async () => {
@@ -194,19 +203,18 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       // increase minDeposit
       await curation.setMinDeposit(minDeposit + 1)
 
-      // mock lock
-      await staking.setLock(minDeposit + 1, TIME_UNIT_SECONDS, (await curation.getTimestampExt.call()).add(applyStageLen + 1000), curation.address, "")
+      // mock lock - no need for lock
+      await staking.setLock(0, TIME_UNIT_SECONDS, 0, zeroAddress, "")
       // challenge
-      await curation.challengeApplication(entryId, challengeLockId, { from: challenger })
-      const challenge = await curation.getChallenge.call(entryId)
+      const receipt = await curation.challengeApplication(entryId, challengeLockId, { from: challenger })
       // no challenge has been created
-      assert.equal(challenge[0], zeroAddress, "Challenger should be zero")
-      assert.equal(challenge[1], 0, "Date should be zero")
-      assert.equal(challenge[2], false, "Resolved should be false")
-      assert.equal(challenge[3], 0, "Amount should be zero")
-      assert.equal(challenge[4], 0, "LockId should be zero")
-      assert.equal(challenge[5], 0, "Vote Id should be zero")
-      assert.equal(challenge[6], 0, "Dipsensation Pct should be zero")
+      const challenge = await curation.getChallenge.call(entryId)
+      assert.equal(challenge[0], zeroAddress, "Challenge should be empty")
+      // application has been removed
+      const application = await curation.getApplication.call(entryId)
+      assert.equal(application[0], zeroAddress, "Applicant should be empty")
+      // applicant lock has been unlocked
+      assert.isTrue(checkUnlocked(receipt, applicant, curation.address, appLockId), "Applicant lock should have been unlocked")
     })
 
     it('fails challenging with an already used lock', async () => {
@@ -282,31 +290,6 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
     // ----------- Resolve challenges --------------
 
-    // checks if a log for moving tokens was generated with the given params
-    // if amount is 0, it will check for any
-    /* this doesn't work, only shows called contract logs
-     const checkMovedTokens = (receipt, from, to, amount) => {
-     const logs = receipt.logs.filter(
-     l =>
-     l.event == 'MovedTokens' &&
-     l.args['from'] == from &&
-     l.args['to'] == to &&
-     (l.args['amount'] == amount || amount == 0)
-     )
-     return logs.length == 1 || (amount == 0 && logs.length >= 1)
-     }
-     */
-    const checkMovedTokens = (receipt, from, to, amount) => {
-      const logs = receipt.receipt.logs.filter(
-        l =>
-          l.topics[0] == web3.sha3('MovedTokens(address,address,uint256)') &&
-          '0x' + l.topics[1].slice(26) == from &&
-          '0x' + l.topics[2].slice(26) == to &&
-          (web3.toDecimal(l.data) == amount || amount == 0)
-      )
-      return logs.length == 1 || (amount == 0 && logs.length >= 1)
-    }
-
     const applyChallengeAndResolve = async (result) => {
       const entryId = await applyAndChallenge()
       // mock vote result
@@ -328,7 +311,7 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isTrue(application[2], "Registered should be true")
       // challenge
       const challenge = await curation.getChallenge.call(entryId)
-      assert.isTrue(challenge[2], "Resolved should be true")
+      assert.equal(challenge[0], zeroAddress, "Challenge should be empty")
       // redistribution
       const amount = new web3.BigNumber(minDeposit).mul(dispensationPct).dividedToIntegerBy(1e18)
       assert.isFalse(checkMovedTokens(receipt, applicant, challenger, 0))
@@ -336,8 +319,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       // used locks
       const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
       const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
-      assert.isFalse(appUsedLock)
-      assert.isTrue(challengeUsedLock)
+      assert.isFalse(appUsedLock, "There should be no lock for application")
+      assert.isFalse(challengeUsedLock, "There should be no lock for challenge")
     })
 
     it('resolves application challenge, accepted', async () => {
@@ -348,19 +331,23 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isFalse(await registry.exists(data), "Data should not have been registered")
       // application
       const application = await curation.getApplication.call(entryId)
-      assert.isFalse(application[2], "Registered should be false")
+      assert.equal(application[0], zeroAddress, "Application should be empty")
       // challenge
       const challenge = await curation.getChallenge.call(entryId)
-      assert.isTrue(challenge[2], "Resolved should be true")
+      assert.equal(challenge[0], zeroAddress, "Challenge should be empty")
       // redistribution
       const amount = new web3.BigNumber(minDeposit).mul(dispensationPct).dividedToIntegerBy(1e18)
-      assert.isFalse(checkMovedTokens(receipt, challenger, applicant, 0))
-      assert.isTrue(checkMovedTokens(receipt, applicant, challenger, amount))
+      const votersRewardPool = new web3.BigNumber(minDeposit).minus(amount)
+      assert.isTrue(checkUnlocked(receipt, applicant, curation.address, appLockId), "Applicant lock should have been unlocked")
+      assert.isTrue(checkUnlocked(receipt, challenger, curation.address, challengeLockId), "Challenger lock should have been unlocked")
+      assert.isFalse(checkMovedTokens(receipt, challenger, applicant, 0), "No challenger tokens should have been moved")
+      assert.isTrue(checkMovedTokens(receipt, applicant, challenger, amount), "Applicant tokens should have been moved to challenger")
+      assert.isTrue(checkMovedTokens(receipt, applicant, curation.address, votersRewardPool), "Applicant tokens should have been moved to Curation app")
       // used locks
       const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
       const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
-      assert.isTrue(appUsedLock)
-      assert.isFalse(challengeUsedLock)
+      assert.isFalse(appUsedLock, "There should be no lock for application")
+      assert.isFalse(challengeUsedLock, "There should be no lock for challenge")
     })
 
     const applyRegisterChallengeAndResolve = async (result) => {
@@ -369,7 +356,7 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       await curation.addTime(applyStageLen + 1)
 
       // register
-      await curation.registerApplication(entryId)
+      await curation.registerUnchallengedApplication(entryId)
 
       // mock lock
       await staking.setLock(minDeposit, TIME_UNIT_SECONDS, (await curation.getTimestampExt.call()).add(applyStageLen + 1000), curation.address, "")
@@ -399,16 +386,20 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isTrue(application[2], "Registered should be true")
       // challenge
       const challenge = await curation.getChallenge.call(entryId)
-      assert.isTrue(challenge[2], "Resolved should be true")
+      assert.equal(challenge[0], zeroAddress, "Challenge should be empty")
       // redistribution
       const amount = new web3.BigNumber(minDeposit).mul(dispensationPct).dividedToIntegerBy(1e18)
-      assert.isFalse(checkMovedTokens(receipt, applicant, challenger, 0))
-      assert.isTrue(checkMovedTokens(receipt, challenger, applicant, amount))
+      const votersRewardPool = new web3.BigNumber(minDeposit).minus(amount)
+      assert.isTrue(checkUnlocked(receipt, applicant, curation.address, appLockId), "Applicant lock should have been unlocked")
+      assert.isTrue(checkUnlocked(receipt, challenger, curation.address, challengeLockId), "Challenger lock should have been unlocked")
+      assert.isFalse(checkMovedTokens(receipt, applicant, challenger, 0), "No Applicant tokens should have been moved")
+      assert.isTrue(checkMovedTokens(receipt, challenger, applicant, amount), "Challenger tokens should have been moved to Applicant")
+      assert.isTrue(checkMovedTokens(receipt, challenger, curation.address, votersRewardPool), "Challenger tokens should have been moved to Curation app")
       // used locks
       const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
       const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
-      assert.isFalse(appUsedLock)
-      assert.isTrue(challengeUsedLock)
+      assert.isFalse(appUsedLock, "There should be no lock for application")
+      assert.isFalse(challengeUsedLock, "There should be no lock for challenge")
     })
 
     it('resolves registry challenge, accepted', async () => {
@@ -419,19 +410,19 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isFalse(await registry.exists(data), "Data should have been removed from register")
       // application
       const application = await curation.getApplication.call(entryId)
-      assert.isFalse(application[2], "Registered should be false")
+      assert.equal(application[0], zeroAddress, "Application should be empty")
       // challenge
       const challenge = await curation.getChallenge.call(entryId)
-      assert.isTrue(challenge[2], "Resolved should be true")
+      assert.equal(challenge[0], zeroAddress, "Challenge should be empty")
       // redistribution
       const amount = new web3.BigNumber(minDeposit).mul(dispensationPct).dividedToIntegerBy(1e18)
-      assert.isFalse(checkMovedTokens(receipt, challenger, applicant, 0))
-      assert.isTrue(checkMovedTokens(receipt, applicant, challenger, amount))
+      assert.isFalse(checkMovedTokens(receipt, challenger, applicant, 0), "challenger tokens should have been moved")
+      assert.isTrue(checkMovedTokens(receipt, applicant, challenger, amount, "applicant tokens should have been moved"))
       // used locks
       const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
       const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
-      assert.isTrue(appUsedLock)
-      assert.isFalse(challengeUsedLock)
+      assert.isFalse(appUsedLock, "There should be no lock for application")
+      assert.isFalse(challengeUsedLock, "There should be no lock for challenge")
     })
 
     it('fails resolving challenge if vote has not ended', async () => {
@@ -463,17 +454,12 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
     // ----------- Claim rewards --------------
 
-    const claimReward = async (result, lastClaim=false) => {
+    const claimReward = async (result) => {
       const {entryId} = await applyChallengeAndResolve(result)
       await voting.setVoterWinningStake(voter, VOTER_WINNING_STAKE)
 
-      if (lastClaim) {
-        // mock Staking to pretend losing party tokens were already distributed
-        await staking.setLock(0, TIME_UNIT_SECONDS, (await curation.getTimestampExt.call()).add(applyStageLen + 1000), curation.address, "")
-      }
-
       // claim reward
-      const receipt = await curation.claimReward(entryId, { from: voter })
+      const receipt = await curation.claimReward(voteId, { from: voter })
       const reward = new web3.BigNumber(minDeposit).mul(VOTER_WINNING_STAKE).mul(1e18 - dispensationPct).dividedToIntegerBy(WINNING_STAKE).dividedToIntegerBy(1e18)
       return {
         entryId: entryId,
@@ -484,55 +470,29 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
     it('claims reward as voter in the winning party', async () => {
       const {receipt, reward} = await claimReward(true)
-      assert.isTrue(checkMovedTokens(receipt, applicant, voter, reward), "Reward should be payed")
+      assert.isTrue(checkMovedTokens(receipt, curation.address, voter, reward), "Reward should be payed")
     })
 
     it('fails claiming reward if not voter in the winning party', async () => {
       const {entryId} = await applyChallengeAndResolve(true)
       await voting.setVoterWinningStake(voter, 0)
       return assertRevert(async () => {
-        await curation.claimReward(entryId, { from: voter })
+        await curation.claimReward(voteId, { from: voter })
       })
 
-    })
-
-    it('claims reward and lock can be released, challenge rejected', async () => {
-      const {receipt, reward} = await claimReward(false, true)
-
-      // checks
-      assert.isTrue(checkMovedTokens(receipt, challenger, voter, reward), "Reward should be payed")
-      const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
-      const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
-      assert.isFalse(appUsedLock, "app lock should have been freed")
-      assert.isFalse(challengeUsedLock, "challenge lock should have been freed")
-    })
-
-    it('claims reward and lock can be released, challenge accepted', async () => {
-      const {entryId, receipt, reward} = await claimReward(true, true)
-
-      // checks
-      assert.isTrue(checkMovedTokens(receipt, applicant, voter, reward), "Reward should be payed")
-      const application = await curation.getApplication.call(entryId)
-      assert.equal(application[0], zeroAddress, "Application should be empty")
-      const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
-      const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
-      assert.isFalse(appUsedLock)
-      assert.isFalse(challengeUsedLock)
     })
 
     it('fails claiming reward if challenge is not resolved', async () => {
       const entryId = await applyAndChallenge()
       return assertRevert(async () => {
-        await curation.claimReward(entryId, { from: challenger })
+        await curation.claimReward(voteId, { from: challenger })
       })
     })
 
     it('fails claiming a reward twice', async () => {
-      const {entryId} = await applyChallengeAndResolve(true)
-      await voting.setVoterWinningStake(voter, VOTER_WINNING_STAKE)
-      await curation.claimReward(entryId, { from: voter })
+      const {entryId} = await claimReward(true)
       return assertRevert(async () => {
-        await curation.claimReward(entryId, { from: voter })
+        await curation.claimReward(voteId, { from: voter })
       })
     })
 
@@ -545,7 +505,7 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       await curation.addTime(applyStageLen + 1)
 
       // register
-      await curation.registerApplication(entryId)
+      await curation.registerUnchallengedApplication(entryId)
 
       // checks
       // registry
@@ -564,7 +524,7 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
       // register
       return assertRevert(async () => {
-        await curation.registerApplication(entryId)
+        await curation.registerUnchallengedApplication(entryId)
       })
     })
 
@@ -583,7 +543,7 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
       // register
       return assertRevert(async () => {
-        await curation.registerApplication(entryId)
+        await curation.registerUnchallengedApplication(entryId)
       })
     })
 
@@ -594,10 +554,38 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       await curation.addTime(applyStageLen + 1)
 
       // register
-      await curation.registerApplication(entryId)
+      await curation.registerUnchallengedApplication(entryId)
 
       return assertRevert(async () => {
-        await curation.registerApplication(entryId)
+        await curation.registerUnchallengedApplication(entryId)
+      })
+    })
+
+    // ----------- Remove application by applicant --------------
+    it('removes application', async () => {
+      const entryId = await createApplication()
+
+      const receipt = await curation.removeApplication(entryId, { from: applicant })
+      // tokens have been unlocked
+      assert.isTrue(checkUnlocked(receipt, applicant, curation.address, appLockId), "Applicant lock in Staking app should have been unlocked")
+      // used lock has been removed
+      const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
+      assert.isFalse(appUsedLock, "Applicant used lock should have been freed")
+    })
+
+    it('fails removing application with an ongoing challenge', async () => {
+      const entryId = await applyAndChallenge()
+
+      return assertRevert(async () => {
+        await curation.removeApplication(entryId)
+      })
+    })
+
+    it('fails removing application by non-applicant', async () => {
+      const entryId = await createApplication()
+
+      return assertRevert(async () => {
+        await curation.removeApplication(entryId, { from: challenger })
       })
     })
 
@@ -642,10 +630,12 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
   })
 
   context('Without init', async () => {
+    const voteId = 1
     beforeEach(async () => {
       registry = await getContract('RegistryApp').new()
       staking = await getContract('StakingMock').new()
       voting = await getContract('VotingMock').new()
+      await voting.setVoteId(voteId)
 
       curation = await getContract('Curation').new()
     })
@@ -677,14 +667,21 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     it('fails registering an application', async () => {
       return assertRevert(async () => {
         const entryId = 1
-        await curation.registerApplication(entryId)
+        await curation.registerUnchallengedApplication(entryId)
       })
     })
 
     it('fails claiming reward', async () => {
       return assertRevert(async () => {
         const entryId = 1
-        await curation.claimReward(entryId)
+        await curation.claimReward(voteId)
+      })
+    })
+
+    it('fails trying to remove entry', async () => {
+      return assertRevert(async () => {
+        const entryId = 1
+        await curation.removeApplication(entryId)
       })
     })
 

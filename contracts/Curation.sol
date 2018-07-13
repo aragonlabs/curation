@@ -45,21 +45,28 @@ contract Curation is AragonApp {
     struct Challenge {
         address challenger;
         uint64 date;
-        bool resolved;
         uint256 amount;
         uint256 lockId;
         uint256 voteId;
         uint256 dispensationPct;
+    }
+
+    struct Vote {
+        bool closed;
+        bool result;
+        uint256 votersRewardPool;
+        uint256 totalWinningStake;
         mapping(address => bool) claims; // participants who already claimed their reward
     }
 
     mapping(bytes32 => Application) applications;
     mapping(bytes32 => Challenge) challenges;
+    mapping(uint256 => Vote) votes;
     mapping(address => mapping(uint256 => bool)) usedLocks;
 
-    event NewApplication(bytes32 entryId, address applicant);
-    event NewChallenge(bytes32 entryId, address challenger);
-    event ResolvedChallenge(bytes32 entryId, bool result);
+    event NewApplication(bytes32 indexed entryId, address applicant);
+    event NewChallenge(bytes32 indexed entryId, address challenger);
+    event ResolvedChallenge(bytes32 indexed entryId, bool result);
 
     /**
      * @notice Initializes Curation app with
@@ -118,48 +125,53 @@ contract Curation is AragonApp {
     function challengeApplication(bytes32 entryId, uint256 lockId) isInitialized public returns(bytes32) {
         // check application doesn't have an ongoing challenge
         require(!challengeExists(entryId));
-        // check locked tokens
-        uint256 amount = _checkLock(msg.sender, lockId, getTimestamp().add(applyStageLen));
 
         // touch-and-remove case
         Application memory application = applications[entryId];
         if (application.amount < minDeposit) {
-            registry.remove(entryId);
             staking.unlock(application.applicant, application.lockId);
-            staking.unlock(msg.sender, lockId);
+            delete(applications[entryId]);
+            registry.remove(entryId);
             return 0;
         }
+
+        // check locked tokens
+        uint256 amount = _checkLock(msg.sender, lockId, getTimestamp().add(applyStageLen));
 
         // create vote
         // TODO: metadata
         // script to call `resolveChallenge(entryId)`
         uint256 scriptLength = 64; // 4 (spec) + 20 (address) + 4 (calldataLength) + 4 (signature) + 32 (input)
         bytes4 spec = bytes4(0x01);
-        address target = address(this);
-        bytes memory targetBytes = new bytes(32);
         bytes4 calldataLength = bytes4(0x24); // 4 + 32
         bytes4 signature = this.resolveChallenge.selector;
         bytes memory executionScript = new bytes(scriptLength);
         // concatenate spec + address(this) + calldataLength + calldata
-        // TODO: should we put this somewhere in aragonOS to be able ti reuse? (if it's not already there)
+        // TODO: should we put this somewhere in aragonOS to be able to reuse it? (if it's not already there)
         assembly {
             mstore(add(executionScript, 0x20), spec)
-            mstore(add(targetBytes, 0x20), target)
-            mstore(add(executionScript, 0x24), mload(add(targetBytes, 0x2C)))
+            mstore(add(executionScript, 0x24), mul(address, exp(2,96)))
             mstore(add(executionScript, 0x38), calldataLength)
             mstore(add(executionScript, 0x3C), signature)
             mstore(add(executionScript, 0x40), entryId)
         }
+
         uint256 voteId = voting.newVote(executionScript, "");
 
         challenges[entryId] = Challenge({
             challenger: msg.sender,
             date: getTimestamp(),
-            resolved: false,
             amount: amount,
             lockId: lockId,
             voteId: voteId,
             dispensationPct: dispensationPct
+        });
+
+        votes[voteId] = Vote({
+            closed: false,
+            result: false,
+            totalWinningStake: 0,
+            votersRewardPool: 0
         });
 
         NewChallenge(entryId, msg.sender);
@@ -168,108 +180,113 @@ contract Curation is AragonApp {
     }
 
     function resolveChallenge(bytes32 entryId) isInitialized public {
+        require(challengeExists(entryId));
         Challenge storage challenge = challenges[entryId];
         Application storage application = applications[entryId];
+        Vote storage vote = votes[challenge.voteId];
 
-        require(!challenge.resolved);
-        // to avoid resolving and redistributing twice
-        challenge.resolved = true;
-        // TODO: canExecute??
         require(voting.isClosed(challenge.voteId));
+        vote.closed = true;
+        (vote.result, vote.totalWinningStake,) = voting.getVoteResult(challenge.voteId);
 
-        bool voteResult;
-        (voteResult,,) = voting.getVoteResult(challenge.voteId);
-
-        uint256 reward;
-        if (voteResult == false) { // challenge not accepted (application remains)
-            // it's still in application phase (not registered yet)
-            if (!application.registered) {
-                // insert in Registry app
-                registry.add(application.data);
-                application.registered = true;
-            }
-            // Remove applicant (winner) used lock
-            delete(usedLocks[application.applicant][application.lockId]);
-            // Unlock challenger tokens from Staking app
-            reward = challenge.amount.mul(dispensationPct) / PCT_BASE;
-            // Redistribute tokens
-            staking.unlockAndMoveTokens(challenge.challenger, challenge.lockId, application.applicant, reward);
-        } else { // challenge accepted (application rejected)
-            // it has been already registered
-            if (application.registered) {
-                // remove from Registry app
-                registry.remove(entryId);
-                application.registered = false;
-            }
-            // Remove challenger (winner) used lock
-            delete(usedLocks[challenge.challenger][challenge.lockId]);
-            // Unlock applicant tokens from Staking app
-            reward = application.amount.mul(dispensationPct) / PCT_BASE;
-            // Redistribute tokens
-            staking.unlockAndMoveTokens(application.applicant, application.lockId, challenge.challenger, reward);
-        }
-
-        ResolvedChallenge(entryId, voteResult);
-    }
-
-    function claimReward(bytes32 entryId) isInitialized public {
-        require(isChallengeResolved(entryId));
-
-        Challenge storage challenge = challenges[entryId];
-        Application memory application = applications[entryId];
-
-        // avoid claiming twice
-        require(!challenge.claims[msg.sender]);
-
-        // register claim to avoid claiming it again
-        challenge.claims[msg.sender] = true;
-
-        bool voteResult;
-        uint256 totalWinningStake;
-        (voteResult, totalWinningStake,) = voting.getVoteResult(challenge.voteId);
-
+        address winner;
         address loser;
         uint256 loserLockId;
         uint256 amount;
-        if (voteResult == false) {
+        if (vote.result == false) { // challenge not accepted (application remains)
+            winner = application.applicant;
             loser = challenge.challenger;
             loserLockId = challenge.lockId;
             amount = challenge.amount;
-        } else { // voteResult == true
+
+            // it's still in application phase (not registered yet)
+            if (!application.registered) {
+                application.registered = true;
+                // insert in Registry app
+                registry.add(application.data);
+            }
+        } else { // challenge accepted (application rejected)
+            winner = challenge.challenger;
             loser = application.applicant;
             loserLockId = application.lockId;
             amount = application.amount;
-        }
 
-        // reward as a voter
-        uint256 voterWinningStake = voting.getVoterWinningStake(challenge.voteId, msg.sender);
-        require(voterWinningStake > 0);
-        // amount * (voter / total) * (1 - dispensationPct)
-        uint256 reward = amount.mul(voterWinningStake).mul(PCT_BASE.sub(dispensationPct)) / (totalWinningStake * PCT_BASE);
-        // Redistribute tokens
-        staking.unlockAndMoveTokens(loser, loserLockId, msg.sender, reward);
-
-        // check if lock can be released
-        uint256 remainingLockAmount;
-        (remainingLockAmount, ) = staking.getLock(loser, loserLockId);
-        if (remainingLockAmount == 0) { // TODO: with truncating, this may never happen!!
-            delete(usedLocks[loser][loserLockId]);
-            // Remove application, if it lost, as redistribution is done
-            if (voteResult == true) {
-                delete(applications[entryId]);
-            }
+            // Remove from Registry app
+            application.registered = false;
+            registry.remove(entryId);
         }
+        // compute rewards
+        uint256 reward = amount.mul(dispensationPct) / PCT_BASE;
+        vote.votersRewardPool = amount - reward;
+
+        // unlock tokens from Staking app
+        staking.unlock(application.applicant, application.lockId);
+        staking.unlock(challenge.challenger, challenge.lockId);
+
+        // redistribute tokens
+        staking.moveTokens(loser, winner, reward);
+        staking.moveTokens(loser, address(this), vote.votersRewardPool);
+
+        // Remove used locks
+        delete(usedLocks[application.applicant][application.lockId]);
+        delete(usedLocks[challenge.challenger][challenge.lockId]);
+
+        // Remove challenge, and application if needed
+        if (vote.result == true) {
+            delete(applications[entryId]);
+        }
+        delete(challenges[entryId]);
+
+        ResolvedChallenge(entryId, vote.result);
     }
 
-    function registerApplication(bytes32 entryId) isInitialized public {
+    function claimReward(uint256 voteId) isInitialized public {
+        require(votes[voteId].closed);
+
+        Vote storage vote = votes[voteId];
+
+        // avoid claiming twice
+        require(!vote.claims[msg.sender]);
+
+        // register claim to avoid claiming it again
+        vote.claims[msg.sender] = true;
+
+        // reward as a voter
+        uint256 voterWinningStake = voting.getVoterWinningStake(voteId, msg.sender);
+        require(voterWinningStake > 0);
+        // rewardPool * (voter / total)
+        uint256 reward = vote.votersRewardPool.mul(voterWinningStake) / vote.totalWinningStake;
+        // Redistribute tokens
+        staking.moveTokens(address(this), msg.sender, reward);
+    }
+
+    function registerUnchallengedApplication(bytes32 entryId) isInitialized public {
         require(canBeRegistered(entryId));
 
         Application storage application = applications[entryId];
         require(!application.registered);
+        application.registered = true;
 
         // insert in Registry app
         registry.add(application.data);
-        application.registered = true;
+    }
+
+    function removeApplication(bytes32 entryId) isInitialized public {
+        // check application doesn't have an ongoing challenge
+        require(!challengeExists(entryId));
+
+        Application memory application = applications[entryId];
+        // check sender is owner
+        require(application.applicant == msg.sender);
+
+        // unlock applicant lock
+        staking.unlock(application.applicant, application.lockId);
+        // remove applicant used lock
+        delete(usedLocks[application.applicant][application.lockId]);
+        // delete application
+        delete(applications[entryId]);
+        // remove from registry
+        registry.remove(entryId);
     }
 
     function setVotingApp(IVoting _voting) authP(CHANGE_VOTING_APP_ROLE, arr(voting, _voting)) public {
@@ -294,18 +311,13 @@ contract Curation is AragonApp {
     }
 
     function canBeRegistered(bytes32 entryId) view public returns (bool) {
-        // no challenges
         if (getTimestamp() > applications[entryId].date.add(applyStageLen) &&
-            challenges[entryId].challenger == address(0))
+            !challengeExists(entryId))
         {
             return true;
         }
 
         return false;
-    }
-
-    function isChallengeResolved(bytes32 entryId) view public returns (bool) {
-        return challenges[entryId].resolved;
     }
 
     function getApplication(
@@ -341,7 +353,6 @@ contract Curation is AragonApp {
         returns (
             address challenger,
             uint64 date,
-            bool resolved,
             uint256 amount,
             uint256 lockId,
             uint256 voteId,
@@ -352,7 +363,6 @@ contract Curation is AragonApp {
         return (
             challenge.challenger,
             challenge.date,
-            challenge.resolved,
             challenge.amount,
             challenge.lockId,
             challenge.voteId,
@@ -360,15 +370,36 @@ contract Curation is AragonApp {
         );
     }
 
+    function getVote(
+        uint256 voteId
+    )
+        view
+        public
+        returns (
+            bool closed,
+            bool result,
+            uint256 totalWinningStake,
+            uint256 votersRewardPool
+        )
+    {
+        Vote memory vote = votes[voteId];
+        return (
+            vote.closed,
+            vote.result,
+            vote.totalWinningStake,
+            vote.votersRewardPool
+        );
+    }
+
     function _checkLock(address user, uint256 lockId, uint64 date) internal returns (uint256) {
-        // check lockId was not used before
-        require(!usedLocks[user][lockId]);
         // get the lock
         uint256 amount;
         uint8 lockUnit;
         uint64 lockEnds;
         address unlocker;
         (amount, lockUnit, lockEnds, unlocker, ) = staking.getLock(msg.sender, lockId);
+        // check lockId was not used before
+        require(!usedLocks[user][lockId]);
         // check unlocker
         require(unlocker == address(this));
         // check enough amount

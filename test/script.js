@@ -1,5 +1,7 @@
 const { assertRevert } = require('@aragon/test-helpers/assertThrow')
 
+const { checkMovedTokens } = require('./helpers.js')
+
 const getContract = name => artifacts.require(name)
 const getEvent = (receipt, event, arg) => { return receipt.logs.filter(l => l.event == event)[0].args[arg] }
 const pct16 = x => new web3.BigNumber(x).times(new web3.BigNumber(10).toPower(16))
@@ -67,17 +69,6 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     return { entryId: entryId, receipt: receipt }
   }
 
-  const checkMovedTokens = (receipt, from, to, amount) => {
-    const logs = receipt.receipt.logs.filter(
-      l =>
-        l.topics[0] == web3.sha3('MovedTokens(address,address,uint256)') &&
-        '0x' + l.topics[1].slice(26) == from &&
-        '0x' + l.topics[2].slice(26) == to &&
-        (web3.toDecimal(l.data) == amount || amount == 0)
-    )
-    return logs.length == 1 || (amount == 0 && logs.length >= 1)
-  }
-
   context('Using voting script', async () => {
     let daoFact
 
@@ -121,7 +112,7 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isTrue(application[2], "Registered should be true")
       // challenge
       const challenge = await curation.getChallenge.call(entryId)
-      assert.isTrue(challenge[2], "Resolved should be true")
+      assert.equal(challenge[0], zeroAddress, "Challenge should be empty")
       // redistribution
       const amount = new web3.BigNumber(minDeposit).mul(dispensationPct).dividedToIntegerBy(1e18)
       assert.isFalse(checkMovedTokens(receipt, applicant, challenger, 0))
@@ -129,8 +120,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       // used locks
       const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
       const challengeUsedLock = await curation.getUsedLock.call(challenger, challengeLockId)
-      assert.isFalse(appUsedLock)
-      assert.isTrue(challengeUsedLock)
+      assert.isFalse(appUsedLock, "There should be no lock for application")
+      assert.isFalse(challengeUsedLock, "There should be no lock for challenge")
     })
 
     it('challenges application and executes, challenge accepted', async () => {
@@ -140,10 +131,10 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       assert.isFalse(await registry.exists(data), "Data should not have been registered")
       // application
       const application = await curation.getApplication.call(entryId)
-      assert.isFalse(application[2], "Registered should be false")
+      assert.equal(application[0], zeroAddress, "Application should be empty")
       // challenge
       const challenge = await curation.getChallenge.call(entryId)
-      assert.isTrue(challenge[2], "Resolved should be true")
+      assert.equal(challenge[0], zeroAddress, "Challenge should be empty")
       // redistribution
       const amount = new web3.BigNumber(minDeposit).mul(dispensationPct).dividedToIntegerBy(1e18)
       assert.isFalse(checkMovedTokens(receipt, challenger, applicant, 0))
@@ -151,8 +142,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       // used locks
       const appUsedLock = await curation.getUsedLock.call(applicant, appLockId)
       const challengeUsedLock = await curation.getUsedLock.call(challenger,challengeLockId)
-      assert.isTrue(appUsedLock)
-      assert.isFalse(challengeUsedLock)
+      assert.isFalse(appUsedLock, "There should be no lock for application")
+      assert.isFalse(challengeUsedLock, "There should be no lock for challenge")
     })
   })
 })
