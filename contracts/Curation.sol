@@ -6,7 +6,7 @@ import "@aragon/os/contracts/lib/zeppelin/math/SafeMath.sol";
 import "@aragon/os/contracts/lib/zeppelin/math/SafeMath64.sol";
 
 import "@aragon/apps-staking/contracts/interfaces/IStaking.sol";
-import "./interfaces/IRegistry.sol";
+import "@aragon/apps-registry/contracts/interfaces/IRegistry.sol";
 import "./interfaces/IVoting.sol";
 
 
