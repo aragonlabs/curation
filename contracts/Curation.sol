@@ -70,7 +70,12 @@ contract Curation is AragonApp {
 
     /**
      * @notice Initializes Curation app with
-     * @param _registry TODO
+     * @param _registry Registry app to be used for registering accepted entries
+     * @param _staking Staking app to be used for staking and locking tokens
+     * @param _voting Voting app to be used for Challenges
+     * @param _minDeposit Minimum amount of tokens needed for Applications and Challenges
+     * @param _applyStageLen Duration after which an application gets registered if it doesn't receive any challenge
+     * @param _dispensationPct Percentage of deposited tokens awarded to the winning party (applicant or challenger). The rest will be distributed among voters
      */
     function initialize(
         IRegistry _registry,
@@ -97,6 +102,12 @@ contract Curation is AragonApp {
         _setDispensationPct(_dispensationPct);
     }
 
+    /**
+     * @notice Submit new application for "`data`" using lock `lockId`
+     * @param data Content of the application
+     * @param lockId Id of the lock from Staking app used for the application
+     * @return Id of the new entry
+     */
     function newApplication(bytes data, uint256 lockId) isInitialized public returns (bytes32 entryId) {
         entryId = keccak256(data);
 
@@ -122,6 +133,12 @@ contract Curation is AragonApp {
         NewApplication(entryId, msg.sender);
     }
 
+    /**
+     * @notice Challenge application for entry with id `entryId` using lock wiht id `lockId`
+     * @param entryId Id of the application being challenged
+     * @param lockId Id of the lock from Staking app used for the application
+     * @return Id of the Challenge, which is the same as the Application one
+     */
     function challengeApplication(bytes32 entryId, uint256 lockId) isInitialized public returns(bytes32) {
         // check application doesn't have an ongoing challenge
         require(!challengeExists(entryId));
@@ -179,6 +196,10 @@ contract Curation is AragonApp {
         return entryId;
     }
 
+    /**
+     * @notice Resolve Challenge for entry with id `entryId`
+     * @param entryId Id of the Application/Challenge
+     */
     function resolveChallenge(bytes32 entryId) isInitialized public {
         require(challengeExists(entryId));
         Challenge storage challenge = challenges[entryId];
@@ -240,6 +261,10 @@ contract Curation is AragonApp {
         ResolvedChallenge(entryId, vote.result);
     }
 
+    /**
+     * @notice Claim reward for a Challenge as a voter for vote with id `voteId`
+     * @param voteId Id of the Vote
+     */
     function claimReward(uint256 voteId) isInitialized public {
         require(votes[voteId].closed);
 
@@ -260,6 +285,10 @@ contract Curation is AragonApp {
         staking.moveTokens(address(this), msg.sender, reward);
     }
 
+    /**
+     * @notice Register unchallenged application with id `entryId`
+     * @param entryId Id of the Application
+     */
     function registerUnchallengedApplication(bytes32 entryId) isInitialized public {
         require(canBeRegistered(entryId));
 
@@ -271,6 +300,10 @@ contract Curation is AragonApp {
         registry.add(application.data);
     }
 
+    /**
+     * @notice Remove Application with id `entryId` by applicant, and unlock deposit
+     * @param entryId Id of the Application
+     */
     function removeApplication(bytes32 entryId) isInitialized public {
         // check application doesn't have an ongoing challenge
         require(!challengeExists(entryId));
@@ -289,18 +322,34 @@ contract Curation is AragonApp {
         registry.remove(entryId);
     }
 
+    /**
+     * @notice Set Voting app
+     * @param _voting New Voting app
+     */
     function setVotingApp(IVoting _voting) authP(CHANGE_VOTING_APP_ROLE, arr(voting, _voting)) public {
         _setVotingApp(_voting);
     }
 
+    /**
+     * @notice Set minimum deposit for Applications and Challenges to `_minDeposit`. It's the minimum amount of tokens needed for Applications and Challenges.
+     * @param _minDeposit New minimum amount
+     */
     function setMinDeposit(uint256 _minDeposit) authP(CHANGE_PARAMS_ROLE, arr(uint256(MIN_DEPOSIT_PARAM), _minDeposit)) public {
         _setMinDeposit(_minDeposit);
     }
 
+    /**
+     * @notice Set apply stage length for Applications to `_applyStageLen`. It's the duration after which an application gets registered if it doesn't receive any challenge
+     * @param _applyStageLen New apply stage length
+     */
     function setApplyStageLen(uint64 _applyStageLen) authP(CHANGE_PARAMS_ROLE, arr(uint256(APPLY_STAGE_LEN_PARAM), _applyStageLen)) public {
         _setApplyStageLen(_applyStageLen);
     }
 
+    /**
+     * @notice Set dispensation percetage parameter for Applications and Challenges to `_dispensationPct`. It's the percentage of deposited tokens awarded to the winning party (applicant or challenger). The rest will be distributed among voters.
+     * @param _dispensationPct New dispensation percentage
+     */
     function setDispensationPct(uint256 _dispensationPct)
         authP(CHANGE_PARAMS_ROLE, arr(uint256(DISPENSATION_PCT_PARAM), _dispensationPct))
         public
@@ -310,6 +359,10 @@ contract Curation is AragonApp {
         _setDispensationPct(_dispensationPct);
     }
 
+    /**
+     * @notice Check if application for entry with id `entryId` has gone through apply stage period without any challenge and therefore can be registered.
+     * @param entryId Id of the Application
+     */
     function canBeRegistered(bytes32 entryId) view public returns (bool) {
         if (getTimestamp() > applications[entryId].date.add(applyStageLen) &&
             !challengeExists(entryId))
@@ -320,6 +373,16 @@ contract Curation is AragonApp {
         return false;
     }
 
+    /**
+     * @notice Get Application details
+     * @param entryId Id of the Application
+     * @return applicant Address of applicant
+     * @return date Date of Application
+     * @return registered Whether has been already registered or not
+     * @return data Content of the Application
+     * @return amount Diposited (staked and locked) amount
+     * @return lockId Id of the lock for the deposit in Staking app
+     */
     function getApplication(
         bytes32 entryId
     )
@@ -345,6 +408,16 @@ contract Curation is AragonApp {
         );
     }
 
+    /**
+     * @notice Get Challenge details for entry with id `entryId`
+     * @param entryId Id of the Application
+     * @return challenger Address of challenger
+     * @return date Date of Challenge
+     * @return amount Diposited (staked and locked) amount
+     * @return lockId Id of the lock for the deposit in Staking app
+     * @return voteId Id of the Vote for the Challenge in Voting app
+     * @return dispensationPct Dispensation Percentage parameter at the time of challenging
+     */
     function getChallenge(
         bytes32 entryId
     )
@@ -356,7 +429,7 @@ contract Curation is AragonApp {
             uint256 amount,
             uint256 lockId,
             uint256 voteId,
-            uint256 dipsensationPct
+            uint256 dispensationPct
         )
     {
         Challenge memory challenge = challenges[entryId];
@@ -370,6 +443,14 @@ contract Curation is AragonApp {
         );
     }
 
+    /**
+     * @notice Get Vote details for Vote with id `voteId`
+     * @param voteId Id of the Vote
+     * @return closed Wheter the Vote has been already closed or not
+     * @return result The result of the Vote
+     * @return totalWinningStake Amount of tokens on the winning side
+     * @return votersRewardPool The total amount that will be redistributed to the voters on the winning side.
+     */
     function getVote(
         uint256 voteId
     )
