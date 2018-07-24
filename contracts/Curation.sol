@@ -118,7 +118,7 @@ contract Curation is AragonApp {
         require(!registry.exists(entryId));
 
         // check locked tokens
-        uint256 amount = _checkLock(msg.sender, lockId, MAX_UINT64);
+        uint256 amount = _checkLock(msg.sender, lockId, getTimestamp(), MAX_UINT64);
 
         applications[entryId] = Application({
             applicant: msg.sender,
@@ -153,7 +153,7 @@ contract Curation is AragonApp {
         }
 
         // check locked tokens
-        uint256 amount = _checkLock(msg.sender, lockId, getTimestamp().add(applyStageLen));
+        uint256 amount = _checkLock(msg.sender, lockId, getTimestamp(), getTimestamp().add(applyStageLen));
 
         // create vote
         // TODO: metadata
@@ -472,13 +472,14 @@ contract Curation is AragonApp {
         );
     }
 
-    function _checkLock(address user, uint256 lockId, uint64 date) internal returns (uint256) {
+    function _checkLock(address user, uint256 lockId, uint64 startDate, uint64 endDate) internal returns (uint256) {
         // get the lock
         uint256 amount;
         uint8 lockUnit;
+        uint64 lockStarts;
         uint64 lockEnds;
         address unlocker;
-        (amount, lockUnit, lockEnds, unlocker, ) = staking.getLock(msg.sender, lockId);
+        (amount, lockUnit, lockStarts, lockEnds, unlocker, ) = staking.getLock(msg.sender, lockId);
         // check lockId was not used before
         require(!usedLocks[user][lockId]);
         // check unlocker
@@ -487,7 +488,8 @@ contract Curation is AragonApp {
         require(amount >= minDeposit);
         // check time
         require(lockUnit == uint8(TimeUnit.Seconds));
-        require(lockEnds >= date);
+        require(lockStarts <= startDate);
+        require(lockEnds >= endDate);
 
         // mark it as used
         usedLocks[user][lockId] = true;

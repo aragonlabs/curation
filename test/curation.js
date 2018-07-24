@@ -1,4 +1,5 @@
 const { assertRevert } = require('@aragon/test-helpers/assertThrow')
+const getTimestamp = async () => await web3.eth.getBlock(web3.eth.blockNumber).timestamp
 
 const { checkUnlocked, checkMovedTokens } = require('./helpers.js')
 
@@ -57,7 +58,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
     const createApplication = async () => {
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, MAX_UINT64, curation.address, "")
       const r = await curation.newApplication(data, appLockId, { from: applicant })
       const entryId = getEvent(r, "NewApplication", "entryId")
 
@@ -79,7 +81,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       const data1 = "Test 1"
       const data2 = "Test 2"
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, MAX_UINT64, curation.address, "")
       // create application
       await curation.newApplication(data1, appLockId, { from: applicant })
       // repeat
@@ -92,7 +95,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       const lockId1 = 1
       const lockId2 = 2
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, MAX_UINT64, curation.address, "")
       // create application
       await curation.newApplication(data, lockId1, { from: applicant })
       // repeat
@@ -105,7 +109,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       const lockId1 = 1
       const lockId2 = 2
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, MAX_UINT64, curation.address, "")
       // register data - this won't happen with real app, as ACLs will be working!
       await registry.add(data)
       // create application
@@ -119,7 +124,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       const lockId2 = 2
       const emptyData = ""
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, MAX_UINT64, curation.address, "")
       // register data - this won't happen with real app, as ACLs will be working!
       await registry.add(data)
       // create application
@@ -130,7 +136,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
     it('fails creating new Application if Curation is not unlocker', async () => {
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, owner, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, MAX_UINT64, owner, "")
       // create application
       return assertRevert(async () => {
         await curation.newApplication(data, appLockId, { from: applicant })
@@ -139,7 +146,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
     it('fails creating new Application if lock deposit is not enough', async () => {
       // mock lock
-      await staking.setLock(minDeposit - 1, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit - 1, TIME_UNIT_SECONDS, startLock, MAX_UINT64, curation.address, "")
       // create application
       return assertRevert(async () => {
         await curation.newApplication(data, appLockId, { from: applicant })
@@ -148,7 +156,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
     it('fails creating new Application if lock time unit is not seconds', async () => {
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS + 1, MAX_UINT64, curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS + 1, startLock, MAX_UINT64, curation.address, "")
       // create application
       return assertRevert(async () => {
         await curation.newApplication(data, appLockId, { from: applicant })
@@ -157,7 +166,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
     it('fails creating new Application if lock time is not enough', async () => {
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64 - 1, curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, MAX_UINT64 - 1, curation.address, "")
       // create application
       return assertRevert(async () => {
         await curation.newApplication(data, appLockId, { from: applicant })
@@ -169,7 +179,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     const applyAndChallenge = async () => {
       const entryId = await createApplication()
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, (await curation.getTimestampExt.call()).add(applyStageLen + 1000), curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, startLock.add(applyStageLen + 1000), curation.address, "")
       // mock vote Id
       await voting.setVoteId(voteId)
       // challenge
@@ -205,7 +216,7 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       await curation.setMinDeposit(minDeposit + 1)
 
       // mock lock - no need for lock
-      await staking.setLock(0, TIME_UNIT_SECONDS, 0, zeroAddress, "")
+      await staking.setLock(0, TIME_UNIT_SECONDS, 0, 0, zeroAddress, "")
       // challenge
       const receipt = await curation.challengeApplication(entryId, challengeLockId, { from: challenger })
       // no challenge has been created
@@ -221,7 +232,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     it('fails challenging with an already used lock', async () => {
       const entryId = await createApplication()
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, MAX_UINT64, curation.address, "")
       // use challenger's lock for an application
       await curation.newApplication("test 2", appLockId, { from: challenger })
       // mock vote Id
@@ -244,7 +256,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     it('fails challenging application if Curation is not unlocker', async () => {
       const entryId = await createApplication()
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, (await curation.getTimestampExt.call()).add(applyStageLen + 1000), owner, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, startLock.add(applyStageLen + 1000), owner, "")
       // mock vote Id
       await voting.setVoteId(voteId)
       // challenge
@@ -256,7 +269,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     it('fails challenging application if lock deposit is not enough', async () => {
       const entryId = await createApplication()
       // mock lock
-      await staking.setLock(minDeposit - 1, TIME_UNIT_SECONDS, (await curation.getTimestampExt.call()).add(applyStageLen + 1000), curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit - 1, TIME_UNIT_SECONDS, startLock, startLock.add(applyStageLen + 1000), curation.address, "")
       // mock vote Id
       await voting.setVoteId(voteId)
       // challenge
@@ -268,7 +282,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     it('fails challenging application if lock time unit is not seconds', async () => {
       const entryId = await createApplication()
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS + 1, (await curation.getTimestampExt.call()).add(applyStageLen + 1000), curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS + 1, startLock, startLock.add(applyStageLen + 1000), curation.address, "")
       // mock vote Id
       await voting.setVoteId(voteId)
       // challenge
@@ -280,7 +295,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     it('fails challenging application if lock time is not enough', async () => {
       const entryId = await createApplication()
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, (await curation.getTimestampExt.call()).add(applyStageLen - 1), curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, startLock.add(applyStageLen - 1), curation.address, "")
       // mock vote Id
       await voting.setVoteId(voteId)
       // challenge
@@ -360,7 +376,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       await curation.registerUnchallengedApplication(entryId)
 
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, (await curation.getTimestampExt.call()).add(applyStageLen + 1000), curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, startLock.add(applyStageLen + 1000), curation.address, "")
       // mock vote Id
       await voting.setVoteId(voteId)
       // challenge
@@ -429,7 +446,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     it('fails resolving challenge if vote has not ended', async () => {
       const entryId = await createApplication()
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, (await curation.getTimestampExt.call()).add(applyStageLen + 1000), curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, startLock.add(applyStageLen + 1000), curation.address, "")
       // mock vote Id
       await voting.setVoteId(voteId)
       // challenge
@@ -533,7 +551,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
       const entryId = await createApplication()
 
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, (await curation.getTimestampExt.call()).add(applyStageLen + 1000), curation.address, "")
+      const startLock = await curation.getTimestampExt.call()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, startLock.add(applyStageLen + 1000), curation.address, "")
       // mock vote Id
       await voting.setVoteId(voteId)
       // challenge
@@ -644,7 +663,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
     it('fails creating new application', async () => {
       const lockId = 1
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
+      const startLock = await getTimestamp()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, MAX_UINT64, curation.address, "")
       return assertRevert(async () => {
         await curation.newApplication("test", lockId)
       })
@@ -723,7 +743,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
     it('creates new Application', async () => {
       // mock lock
-      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
+      const startLock = await getTimestamp()
+      await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, MAX_UINT64, curation.address, "")
       // create application
       const r = await curation.newApplication(data, appLockId, { from: applicant })
       const entryId = getEvent(r, "NewApplication", "entryId")

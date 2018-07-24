@@ -26,7 +26,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
   const createApplication = async () => {
     // mock lock
-    await staking.setLock(minDeposit, TIME_UNIT_SECONDS, MAX_UINT64, curation.address, "")
+    const startLock = await curation.getTimestampExt.call()
+    await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, MAX_UINT64, curation.address, "")
     const r = await curation.newApplication(data, appLockId, { from: applicant })
     const entryId = getEvent(r, "NewApplication", "entryId")
 
@@ -36,7 +37,8 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
   const applyAndChallenge = async () => {
     const entryId = await createApplication()
     // mock lock
-    await staking.setLock(minDeposit, TIME_UNIT_SECONDS, (await curation.getTimestampExt.call()).add(applyStageLen + 1000), curation.address, "")
+    const startLock = await curation.getTimestampExt.call()
+    await staking.setLock(minDeposit, TIME_UNIT_SECONDS, startLock, startLock.add(applyStageLen + 1000), curation.address, "")
     // mock vote Id
     await voting.setVoteId(voteId)
     // challenge
