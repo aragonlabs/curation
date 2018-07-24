@@ -81,6 +81,7 @@ contract('Curation', ([owner, applicant, challenger, voter, _]) => {
 
     beforeEach(async () => {
       registry = await getContract('RegistryApp').new()
+      await registry.initialize()
       staking = await getContract('StakingMock').new()
 
       // DAO
