@@ -1,0 +1,41 @@
+{
+  "name": "@aragon/apps-curation",
+  "version": "1.0.0",
+  "description": "Curation App for Aragon TCR",
+  "main": "truffle.js",
+  "scripts": {
+    "compile": "truffle compile",
+    "lint": "solium --dir ./contracts",
+    "test": "TRUFFLE_TEST=true npm run ganache-cli:test",
+    "test:gas": "GAS_REPORTER=true npm test",
+    "coverage": "SOLIDITY_COVERAGE=true npm run ganache-cli:test",
+    "truffle:dev": "node_modules/.bin/truffle dev",
+    "ganache-cli:test": "./node_modules/@aragon/test-helpers/ganache-cli.sh",
+    "prepublishOnly": "truffle compile --all"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aragonlabs/curation.git"
+  },
+  "author": "Aragon One AG",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/aragonlabs/curation/issues"
+  },
+  "homepage": "https://github.com/aragonlabs/curation#readme",
+  "devDependencies": {
+    "@aragon/apps-registry": "^1.0.0",
+    "@aragon/apps-staking": "^1.0.0",
+    "@aragon/test-helpers": "^1.0.0",
+    "eth-gas-reporter": "^0.1.5",
+    "ganache-cli": "^6.1.0",
+    "solidity-coverage": "0.4.3",
+    "solidity-sha3": "^0.4.1",
+    "solium": "^1.0.4",
+    "truffle": "4.0.5",
+    "truffle-hdwallet-provider": "0.0.3"
+  },
+  "dependencies": {
+    "@aragon/os": "^3.1.2"
+  }
+}
