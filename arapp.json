@@ -1,8 +1,48 @@
 {
+    "environments": {
+      "default": {
+        "registry": "0x5f6f7e8cc7346a11ca2def8f827b7a0b612c56a1",
+        "appName": "curation.aragonpm.eth",
+        "network": "rpc"
+      },
+      "rinkeby": {
+        "registry": "0x98Df287B6C145399Aaa709692c8D308357bC085D",
+        "appName": "curation.aragonpm.eth",
+        "network": "rinkeby"
+      }
+    },
+    "dependencies": [
+      {
+        "appName": "plcr.aragonpm.eth",
+        "version": "^1.0.0",
+        "initParam": "_voting",
+        "state": "voting",
+        "requiredPermissions": [
+          {
+            "name": "CREATE_VOTE_ROLE",
+            "params": "*"
+          }
+        ]
+      }, {
+        "appName": "registry.aragonpm.eth",
+        "version": "^1.0.0",
+        "initParam": "_registry",
+        "state": "registry",
+        "requiredPermissions": [
+          {
+            "name": "ADD_ENTRY_ROLE",
+            "params": "*"
+          }, {
+            "name": "REMOVE_ENTRY_ROLE",
+            "params": "*"
+          }
+        ]
+      }
+    ],
     "appName": "curation.aragonpm.eth",
     "version": "1.0.0",
     "roles": [
-        { "name": "Change parameters", "id": "CHANGE_PARAMS_ROLE", "params": ["Param id", "Value"] },
+      { "name": "Change parameters", "id": "CHANGE_PARAMS_ROLE", "params": ["Param id", "Value"] },
       { "name": "Change Voting app", "id": "CHANGE_VOTING_APP_ROLE", "params": ["Old Voting app", "New Voting app"] }
     ],
     "path": "contracts/Curation.sol"
