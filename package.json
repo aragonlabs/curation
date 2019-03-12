@@ -5,6 +5,7 @@
   "main": "truffle.js",
   "scripts": {
     "compile": "truffle compile",
+    "build": "cd app && npm run build",
     "lint": "solium --dir ./contracts",
     "test": "TRUFFLE_TEST=true npm run ganache-cli:test",
     "test:gas": "GAS_REPORTER=true npm test",
