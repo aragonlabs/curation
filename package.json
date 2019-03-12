@@ -24,18 +24,16 @@
   },
   "homepage": "https://github.com/aragonlabs/curation#readme",
   "devDependencies": {
-    "@aragon/apps-registry": "^1.0.0",
-    "@aragon/apps-staking": "^1.0.0",
     "@aragon/test-helpers": "^1.0.0",
     "eth-gas-reporter": "^0.1.5",
     "ganache-cli": "^6.1.0",
     "solidity-coverage": "0.4.3",
     "solidity-sha3": "^0.4.1",
     "solium": "^1.0.4",
-    "truffle": "4.0.5",
+    "truffle": "4.1.14",
     "truffle-hdwallet-provider": "0.0.3"
   },
   "dependencies": {
-    "@aragon/os": "^3.1.2"
+    "@aragon/os": "^4.0.1"
   }
 }

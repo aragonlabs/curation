@@ -1,4 +1,4 @@
-pragma solidity 0.4.18;
+pragma solidity 0.4.24;
 
 import "@aragon/apps-registry/contracts/RegistryApp.sol";
 import "@aragon/os/contracts/factory/EVMScriptRegistryFactory.sol";

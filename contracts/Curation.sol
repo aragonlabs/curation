@@ -1,11 +1,11 @@
-pragma solidity 0.4.18;
+pragma solidity 0.4.24;
 
 import "@aragon/os/contracts/apps/AragonApp.sol";
 import "@aragon/os/contracts/lib/misc/Migrations.sol";
-import "@aragon/os/contracts/lib/zeppelin/math/SafeMath.sol";
-import "@aragon/os/contracts/lib/zeppelin/math/SafeMath64.sol";
+import "@aragon/os/contracts/lib/math/SafeMath.sol";
+import "@aragon/os/contracts/lib/math/SafeMath64.sol";
 
-import "@aragon/apps-staking/contracts/interfaces/IStaking.sol";
+import "staking/contracts/IStakingLocking.sol";
 import "@aragon/apps-registry/contracts/interfaces/IRegistry.sol";
 import "./interfaces/IVoting.sol";
 
@@ -21,7 +21,7 @@ contract Curation is AragonApp {
     bytes32 constant public DISPENSATION_PCT_PARAM = keccak256("DISPENSATION_PCT_PARAM");
 
     IRegistry public registry;
-    IStaking public staking;
+    IStakingLocking public staking;
     IVoting public voting;
     uint256 public minDeposit;
     uint64 public applyStageLen;
@@ -30,11 +30,8 @@ contract Curation is AragonApp {
     bytes32 constant public CHANGE_PARAMS_ROLE = keccak256("CHANGE_PARAMS_ROLE");
     bytes32 constant public CHANGE_VOTING_APP_ROLE = keccak256("CHANGE_VOTING_APP_ROLE");
 
-    // TODO!!!
-    enum TimeUnit { Blocks, Seconds }
-
-    struct Application {
-        address applicant;
+    struct Submission {
+        address submitter;
         uint64 date;
         bool registered;
         bytes data;
@@ -59,12 +56,12 @@ contract Curation is AragonApp {
         mapping(address => bool) claims; // participants who already claimed their reward
     }
 
-    mapping(bytes32 => Application) applications;
+    mapping(bytes32 => Submission) submissions;
     mapping(bytes32 => Challenge) challenges;
     mapping(uint256 => Vote) votes;
     mapping(address => mapping(uint256 => bool)) usedLocks;
 
-    event NewApplication(bytes32 indexed entryId, address applicant);
+    event NewSubmission(bytes32 indexed entryId, address submitter);
     event NewChallenge(bytes32 indexed entryId, address challenger);
     event ResolvedChallenge(bytes32 indexed entryId, bool result);
 
@@ -73,13 +70,13 @@ contract Curation is AragonApp {
      * @param _registry Registry app to be used for registering accepted entries
      * @param _staking Staking app to be used for staking and locking tokens
      * @param _voting Voting app to be used for Challenges
-     * @param _minDeposit Minimum amount of tokens needed for Applications and Challenges
-     * @param _applyStageLen Duration after which an application gets registered if it doesn't receive any challenge
-     * @param _dispensationPct Percentage of deposited tokens awarded to the winning party (applicant or challenger). The rest will be distributed among voters
+     * @param _minDeposit Minimum amount of tokens needed for Submissions and Challenges
+     * @param _applyStageLen Duration after which an submission gets registered if it doesn't receive any challenge
+     * @param _dispensationPct Percentage of deposited tokens awarded to the winning party (submitter or challenger). The rest will be distributed among voters
      */
     function initialize(
         IRegistry _registry,
-        IStaking _staking,
+        IStakingLocking _staking,
         IVoting _voting,
         uint256 _minDeposit,
         uint64 _applyStageLen,
@@ -103,26 +100,26 @@ contract Curation is AragonApp {
     }
 
     /**
-     * @notice Submit new application for "`data`" using lock `lockId`
-     * @param data Content of the application
-     * @param lockId Id of the lock from Staking app used for the application
+     * @notice Submit new submission for "`data`" using lock `lockId`
+     * @param data Content of the submission
+     * @param lockId Id of the lock from Staking app used for the submission
      * @return Id of the new entry
      */
-    function newApplication(bytes data, uint256 lockId) isInitialized public returns (bytes32 entryId) {
+    function newSubmission(bytes data, uint256 lockId) isInitialized public returns (bytes32 entryId) {
         entryId = keccak256(data);
 
         require(data.length != 0);
-        // check data doesn't have an ongoing application
-        require(!applicationExists(entryId));
+        // check data doesn't have an ongoing submission
+        require(!submissionExists(entryId));
         // check data doesn't exist in Registry
         require(!registry.exists(entryId));
 
         // check locked tokens
-        uint256 amount = _checkLock(msg.sender, lockId, getTimestamp(), MAX_UINT64);
+        uint256 amount = _checkLock(msg.sender, lockId, MAX_UINT64);
 
-        applications[entryId] = Application({
-            applicant: msg.sender,
-            date: getTimestamp(),
+        submissions[entryId] = Submission({
+            submitter: msg.sender,
+            date: getTimestamp64(),
             registered: false,
             data: data,
             amount: amount,
@@ -130,30 +127,30 @@ contract Curation is AragonApp {
         });
 
         // register used lock
-        NewApplication(entryId, msg.sender);
+        emit NewSubmission(entryId, msg.sender);
     }
 
     /**
-     * @notice Challenge application for entry with id `entryId` using lock wiht id `lockId`
-     * @param entryId Id of the application being challenged
-     * @param lockId Id of the lock from Staking app used for the application
-     * @return Id of the Challenge, which is the same as the Application one
+     * @notice Challenge submission for entry with id `entryId` using lock wiht id `lockId`
+     * @param entryId Id of the submission being challenged
+     * @param lockId Id of the lock from Staking app used for the submission
+     * @return Id of the Challenge, which is the same as the Submission one
      */
-    function challengeApplication(bytes32 entryId, uint256 lockId) isInitialized public returns(bytes32) {
-        // check application doesn't have an ongoing challenge
+    function challengeSubmission(bytes32 entryId, uint256 lockId) isInitialized public returns(bytes32) {
+        // check submission doesn't have an ongoing challenge
         require(!challengeExists(entryId));
 
         // touch-and-remove case
-        Application memory application = applications[entryId];
-        if (application.amount < minDeposit) {
-            staking.unlock(application.applicant, application.lockId);
-            delete(applications[entryId]);
+        Submission memory submission = submissions[entryId];
+        if (submission.amount < minDeposit) {
+            staking.unlock(submission.submitter, submission.lockId);
+            delete(submissions[entryId]);
             registry.remove(entryId);
             return 0;
         }
 
         // check locked tokens
-        uint256 amount = _checkLock(msg.sender, lockId, getTimestamp(), getTimestamp().add(applyStageLen));
+        uint256 amount = _checkLock(msg.sender, lockId, getTimestamp64().add(applyStageLen));
 
         // create vote
         // TODO: metadata
@@ -177,7 +174,7 @@ contract Curation is AragonApp {
 
         challenges[entryId] = Challenge({
             challenger: msg.sender,
-            date: getTimestamp(),
+            date: getTimestamp64(),
             amount: amount,
             lockId: lockId,
             voteId: voteId,
@@ -191,19 +188,19 @@ contract Curation is AragonApp {
             votersRewardPool: 0
         });
 
-        NewChallenge(entryId, msg.sender);
+        emit NewChallenge(entryId, msg.sender);
 
         return entryId;
     }
 
     /**
      * @notice Resolve Challenge for entry with id `entryId`
-     * @param entryId Id of the Application/Challenge
+     * @param entryId Id of the Submission/Challenge
      */
     function resolveChallenge(bytes32 entryId) isInitialized public {
         require(challengeExists(entryId));
         Challenge storage challenge = challenges[entryId];
-        Application storage application = applications[entryId];
+        Submission storage submission = submissions[entryId];
         Vote storage vote = votes[challenge.voteId];
 
         require(voting.isClosed(challenge.voteId));
@@ -214,51 +211,52 @@ contract Curation is AragonApp {
         address loser;
         uint256 loserLockId;
         uint256 amount;
-        if (vote.result == false) { // challenge not accepted (application remains)
-            winner = application.applicant;
+        if (vote.result == false) { // challenge not accepted (submission remains)
+            winner = submission.submitter;
             loser = challenge.challenger;
             loserLockId = challenge.lockId;
             amount = challenge.amount;
 
-            // it's still in application phase (not registered yet)
-            if (!application.registered) {
-                application.registered = true;
+            // it's still in submission phase (not registered yet)
+            if (!submission.registered) {
+                submission.registered = true;
                 // insert in Registry app
-                registry.add(application.data);
+                registry.add(submission.data);
             }
-        } else { // challenge accepted (application rejected)
+        } else { // challenge accepted (submission rejected)
             winner = challenge.challenger;
-            loser = application.applicant;
-            loserLockId = application.lockId;
-            amount = application.amount;
+            loser = submission.submitter;
+            loserLockId = submission.lockId;
+            amount = submission.amount;
 
             // Remove from Registry app
-            application.registered = false;
+            submission.registered = false;
             registry.remove(entryId);
         }
         // compute rewards
         uint256 reward = amount.mul(dispensationPct) / PCT_BASE;
         vote.votersRewardPool = amount - reward;
 
-        // unlock tokens from Staking app
-        staking.unlock(application.applicant, application.lockId);
-        staking.unlock(challenge.challenger, challenge.lockId);
-
         // redistribute tokens
-        staking.moveTokens(loser, winner, reward);
+        // TODO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        staking.transferFromLock(loser, loserLockId, reward, winner, 0);
         staking.moveTokens(loser, address(this), vote.votersRewardPool);
 
+        // unlock tokens from Staking app
+        staking.unlock(submission.submitter, submission.lockId);
+        staking.unlock(challenge.challenger, challenge.lockId);
+
         // Remove used locks
-        delete(usedLocks[application.applicant][application.lockId]);
+        delete(usedLocks[submission.submitter][submission.lockId]);
         delete(usedLocks[challenge.challenger][challenge.lockId]);
 
-        // Remove challenge, and application if needed
+        // Remove challenge, and submission if needed
         if (vote.result == true) {
-            delete(applications[entryId]);
+            delete(submissions[entryId]);
         }
         delete(challenges[entryId]);
 
-        ResolvedChallenge(entryId, vote.result);
+        emit ResolvedChallenge(entryId, vote.result);
     }
 
     /**
@@ -282,42 +280,42 @@ contract Curation is AragonApp {
         // rewardPool * (voter / total)
         uint256 reward = vote.votersRewardPool.mul(voterWinningStake) / vote.totalWinningStake;
         // Redistribute tokens
-        staking.moveTokens(address(this), msg.sender, reward);
+        staking.transfer(reward, msg.sender, 0);
     }
 
     /**
-     * @notice Register unchallenged application with id `entryId`
-     * @param entryId Id of the Application
+     * @notice Register unchallenged submission with id `entryId`
+     * @param entryId Id of the Submission
      */
-    function registerUnchallengedApplication(bytes32 entryId) isInitialized public {
+    function registerUnchallengedSubmission(bytes32 entryId) isInitialized public {
         require(canBeRegistered(entryId));
 
-        Application storage application = applications[entryId];
-        require(!application.registered);
-        application.registered = true;
+        Submission storage submission = submissions[entryId];
+        require(!submission.registered);
+        submission.registered = true;
 
         // insert in Registry app
-        registry.add(application.data);
+        registry.add(submission.data);
     }
 
     /**
-     * @notice Remove Application with id `entryId` by applicant, and unlock deposit
-     * @param entryId Id of the Application
+     * @notice Remove Submission with id `entryId` by submitter, and unlock deposit
+     * @param entryId Id of the Submission
      */
-    function removeApplication(bytes32 entryId) isInitialized public {
-        // check application doesn't have an ongoing challenge
+    function removeSubmission(bytes32 entryId) isInitialized public {
+        // check submission doesn't have an ongoing challenge
         require(!challengeExists(entryId));
 
-        Application memory application = applications[entryId];
+        Submission memory submission = submissions[entryId];
         // check sender is owner
-        require(application.applicant == msg.sender);
+        require(submission.submitter == msg.sender);
 
-        // unlock applicant lock
-        staking.unlock(application.applicant, application.lockId);
-        // remove applicant used lock
-        delete(usedLocks[application.applicant][application.lockId]);
-        // delete application
-        delete(applications[entryId]);
+        // unlock submitter lock
+        staking.unlock(submission.submitter, submission.lockId);
+        // remove submitter used lock
+        delete(usedLocks[submission.submitter][submission.lockId]);
+        // delete submission
+        delete(submissions[entryId]);
         // remove from registry
         registry.remove(entryId);
     }
@@ -331,7 +329,7 @@ contract Curation is AragonApp {
     }
 
     /**
-     * @notice Set minimum deposit for Applications and Challenges to `_minDeposit`. It's the minimum amount of tokens needed for Applications and Challenges.
+     * @notice Set minimum deposit for Submissions and Challenges to `_minDeposit`. It's the minimum amount of tokens needed for Submissions and Challenges.
      * @param _minDeposit New minimum amount
      */
     function setMinDeposit(uint256 _minDeposit) authP(CHANGE_PARAMS_ROLE, arr(uint256(MIN_DEPOSIT_PARAM), _minDeposit)) public {
@@ -339,7 +337,7 @@ contract Curation is AragonApp {
     }
 
     /**
-     * @notice Set apply stage length for Applications to `_applyStageLen`. It's the duration after which an application gets registered if it doesn't receive any challenge
+     * @notice Set apply stage length for Submissions to `_applyStageLen`. It's the duration after which an submission gets registered if it doesn't receive any challenge
      * @param _applyStageLen New apply stage length
      */
     function setApplyStageLen(uint64 _applyStageLen) authP(CHANGE_PARAMS_ROLE, arr(uint256(APPLY_STAGE_LEN_PARAM), _applyStageLen)) public {
@@ -347,7 +345,7 @@ contract Curation is AragonApp {
     }
 
     /**
-     * @notice Set dispensation percetage parameter for Applications and Challenges to `_dispensationPct`. It's the percentage of deposited tokens awarded to the winning party (applicant or challenger). The rest will be distributed among voters.
+     * @notice Set dispensation percetage parameter for Submissions and Challenges to `_dispensationPct`. It's the percentage of deposited tokens awarded to the winning party (submitter or challenger). The rest will be distributed among voters.
      * @param _dispensationPct New dispensation percentage
      */
     function setDispensationPct(uint256 _dispensationPct)
@@ -360,11 +358,11 @@ contract Curation is AragonApp {
     }
 
     /**
-     * @notice Check if application for entry with id `entryId` has gone through apply stage period without any challenge and therefore can be registered.
-     * @param entryId Id of the Application
+     * @notice Check if submission for entry with id `entryId` has gone through apply stage period without any challenge and therefore can be registered.
+     * @param entryId Id of the Submission
      */
     function canBeRegistered(bytes32 entryId) view public returns (bool) {
-        if (getTimestamp() > applications[entryId].date.add(applyStageLen) &&
+        if (getTimestamp64() > submissions[entryId].date.add(applyStageLen) &&
             !challengeExists(entryId))
         {
             return true;
@@ -374,22 +372,22 @@ contract Curation is AragonApp {
     }
 
     /**
-     * @notice Get Application details
-     * @param entryId Id of the Application
-     * @return applicant Address of applicant
-     * @return date Date of Application
+     * @notice Get Submission details
+     * @param entryId Id of the Submission
+     * @return submitter Address of submitter
+     * @return date Date of Submission
      * @return registered Whether has been already registered or not
-     * @return data Content of the Application
+     * @return data Content of the Submission
      * @return amount Diposited (staked and locked) amount
      * @return lockId Id of the lock for the deposit in Staking app
      */
-    function getApplication(
+    function getSubmission(
         bytes32 entryId
     )
         view
         public
         returns (
-            address applicant,
+            address submitter,
             uint64 date,
             bool registered,
             bytes data,
@@ -397,26 +395,26 @@ contract Curation is AragonApp {
             uint256 lockId
         )
     {
-        Application memory application = applications[entryId];
+        Submission memory submission = submissions[entryId];
         return (
-            application.applicant,
-            application.date,
-            application.registered,
-            application.data,
-            application.amount,
-            application.lockId
+            submission.submitter,
+            submission.date,
+            submission.registered,
+            submission.data,
+            submission.amount,
+            submission.lockId
         );
     }
 
     /**
      * @notice Get Challenge details for entry with id `entryId`
-     * @param entryId Id of the Application
+     * @param entryId Id of the Submission
      * @return challenger Address of challenger
      * @return date Date of Challenge
      * @return amount Diposited (staked and locked) amount
      * @return lockId Id of the lock for the deposit in Staking app
      * @return voteId Id of the Vote for the Challenge in Voting app
-     * @return dispensationPct Dispensation Percentage parameter at the time of challenging
+     * @return dispensation Dispensation Percentage parameter at the time of challenging
      */
     function getChallenge(
         bytes32 entryId
@@ -429,7 +427,7 @@ contract Curation is AragonApp {
             uint256 amount,
             uint256 lockId,
             uint256 voteId,
-            uint256 dispensationPct
+            uint256 dispensation
         )
     {
         Challenge memory challenge = challenges[entryId];
@@ -472,24 +470,20 @@ contract Curation is AragonApp {
         );
     }
 
-    function _checkLock(address user, uint256 lockId, uint64 startDate, uint64 endDate) internal returns (uint256) {
+    function _checkLock(address user, uint256 lockId, uint64 endDate) internal returns (uint256) {
         // get the lock
         uint256 amount;
-        uint8 lockUnit;
-        uint64 lockStarts;
-        uint64 lockEnds;
+        uint64 unlockedAt;
         address unlocker;
-        (amount, lockUnit, lockStarts, lockEnds, unlocker, ) = staking.getLock(msg.sender, lockId);
+        (amount, unlockedAt, unlocker, ) = staking.getLock(msg.sender, lockId);
         // check lockId was not used before
         require(!usedLocks[user][lockId]);
         // check unlocker
         require(unlocker == address(this));
         // check enough amount
         require(amount >= minDeposit);
-        // check time
-        require(lockUnit == uint8(TimeUnit.Seconds));
-        require(lockStarts <= startDate);
-        require(lockEnds >= endDate);
+        // check is not unlocked
+        require(unlockedAt >= endDate);
 
         // mark it as used
         usedLocks[user][lockId] = true;
@@ -515,15 +509,11 @@ contract Curation is AragonApp {
         dispensationPct = _dispensationPct;
     }
 
-    function applicationExists(bytes32 entryId) view internal returns (bool) {
-        return applications[entryId].data.length > 0;
+    function submissionExists(bytes32 entryId) view internal returns (bool) {
+        return submissions[entryId].data.length > 0;
     }
 
     function challengeExists(bytes32 entryId) view internal returns (bool) {
         return challenges[entryId].challenger != address(0);
-    }
-
-    function getTimestamp() view internal returns (uint64) {
-        return uint64(now);
     }
 }

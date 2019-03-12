@@ -1,9 +1,9 @@
-pragma solidity 0.4.18;
+pragma solidity 0.4.24;
 
-import "@aragon/apps-staking/contracts/interfaces/IStaking.sol";
+import "staking/contracts/IStakingLocking.sol";
 
 
-contract StakingMock is IStaking {
+contract StakingMock is IStakingLocking {
     uint256 amount;
     uint8 lockUnit;
     uint64 lockStarts;
@@ -24,16 +24,16 @@ contract StakingMock is IStaking {
     }
 
     function unlock(address _acct, uint256 _lockId) public {
-        Unlocked(_acct, msg.sender, _lockId);
+        emit Unlocked(_acct, msg.sender, _lockId);
     }
 
     function moveTokens(address _from, address _to, uint256 _amount) public {
-        MovedTokens(_from, _to, _amount);
+        emit MovedTokens(_from, _to, _amount);
     }
 
     function unlockPartialAndMoveTokens(address _from, uint256 _lockId, address _to, uint256 _amount) external {
-        UnlockedPartial(_from, msg.sender, _lockId, _amount);
-        MovedTokens(_from, _to, _amount);
+        emit UnlockedPartial(_from, msg.sender, _lockId, _amount);
+        emit MovedTokens(_from, _to, _amount);
     }
 
     function getLock(

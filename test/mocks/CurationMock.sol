@@ -1,4 +1,4 @@
-pragma solidity 0.4.18;
+pragma solidity 0.4.24;
 
 import "../../contracts/Curation.sol";
 
@@ -7,7 +7,7 @@ contract CurationMock is Curation {
     uint64 _mockTime = uint64(now);
 
     function getTimestampExt() external view returns (uint64) {
-        return getTimestamp();
+        return getTimestamp64();
     }
 
     function setTimestamp(uint64 i) public {
@@ -18,7 +18,7 @@ contract CurationMock is Curation {
         _mockTime += i;
     }
 
-    function getTimestamp() internal view returns (uint64) {
+    function getTimestamp64() internal view returns (uint64) {
         return _mockTime;
     }
 
